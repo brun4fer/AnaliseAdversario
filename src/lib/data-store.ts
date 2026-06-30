@@ -1,0 +1,1005 @@
+import { randomUUID } from "node:crypto";
+import type {
+  Match,
+  MomentType,
+  Prisma,
+  ShortcutSetting,
+  SubMomentType,
+  Video,
+} from "@prisma/client";
+
+import {
+  buildDefaultShortcuts,
+  defaultMomentTypes,
+  defaultSubMomentTypes,
+} from "@/lib/defaults";
+import type {
+  CreateMatchInput,
+  CreateMomentInput,
+  CreateSubMomentInput,
+  MatchDetail,
+  MatchRecord,
+  MatchSummary,
+  MomentRecord,
+  MomentTypeRecord,
+  SettingsPayload,
+  ShortcutSettingRecord,
+  SubMomentRecord,
+  SubMomentTypeRecord,
+  UpdateMatchInput,
+  UpdateMomentInput,
+  UpdateSubMomentInput,
+  VideoMetadataInput,
+  VideoRecord,
+} from "@/lib/domain";
+import { hasDatabaseUrl, prisma } from "@/lib/prisma";
+
+type MemoryMoment = Omit<MomentRecord, "momentType" | "subMoments">;
+type MemorySubMoment = Omit<SubMomentRecord, "subMomentType">;
+
+type MemoryStore = {
+  matches: MatchRecord[];
+  videos: VideoRecord[];
+  momentTypes: MomentTypeRecord[];
+  moments: MemoryMoment[];
+  subMomentTypes: SubMomentTypeRecord[];
+  subMoments: MemorySubMoment[];
+  shortcuts: ShortcutSettingRecord[];
+};
+
+type PrismaMomentWithRelations = Prisma.MomentGetPayload<{
+  include: {
+    momentType: true;
+    subMoments: {
+      include: {
+        subMomentType: true;
+      };
+    };
+  };
+}>;
+
+type PrismaSubMomentWithType = Prisma.SubMomentGetPayload<{
+  include: {
+    subMomentType: true;
+  };
+}>;
+
+const globalForStore = globalThis as unknown as {
+  memoryStore?: MemoryStore;
+  databaseDefaultsReady?: boolean;
+};
+
+function now() {
+  return new Date().toISOString();
+}
+
+function id() {
+  return randomUUID();
+}
+
+function getMemoryStore() {
+  if (!globalForStore.memoryStore) {
+    globalForStore.memoryStore = {
+      matches: [],
+      videos: [],
+      momentTypes: defaultMomentTypes.map((type) => ({ ...type })),
+      moments: [],
+      subMomentTypes: defaultSubMomentTypes.map((type) => ({ ...type })),
+      subMoments: [],
+      shortcuts: buildDefaultShortcuts(defaultMomentTypes).map((shortcut) => ({ ...shortcut })),
+    };
+  }
+
+  return globalForStore.memoryStore;
+}
+
+function shouldUseDatabase() {
+  return hasDatabaseUrl();
+}
+
+async function ensureDatabaseDefaults() {
+  if (!shouldUseDatabase() || globalForStore.databaseDefaultsReady) {
+    return;
+  }
+
+  const savedMomentTypes: MomentTypeRecord[] = [];
+
+  for (const type of defaultMomentTypes) {
+    const saved = await prisma.momentType.upsert({
+      where: { code: type.code },
+      update: {
+        name: type.name,
+        color: type.color,
+        defaultShortcut: type.defaultShortcut,
+      },
+      create: {
+        id: type.id,
+        name: type.name,
+        code: type.code,
+        color: type.color,
+        defaultShortcut: type.defaultShortcut,
+      },
+    });
+    savedMomentTypes.push(mapMomentType(saved));
+  }
+
+  for (const type of defaultSubMomentTypes) {
+    await prisma.subMomentType.upsert({
+      where: { code: type.code },
+      update: {
+        name: type.name,
+        requiresFieldLocation: type.requiresFieldLocation,
+        requiresGoalLocation: type.requiresGoalLocation,
+      },
+      create: {
+        id: type.id,
+        name: type.name,
+        code: type.code,
+        requiresFieldLocation: type.requiresFieldLocation,
+        requiresGoalLocation: type.requiresGoalLocation,
+      },
+    });
+  }
+
+  for (const shortcut of buildDefaultShortcuts(savedMomentTypes)) {
+    await prisma.shortcutSetting.upsert({
+      where: { id: shortcut.id },
+      update: {
+        actionType: shortcut.actionType,
+        targetType: shortcut.targetType,
+        targetId: shortcut.targetId,
+        key: shortcut.key,
+      },
+      create: {
+        id: shortcut.id,
+        actionType: shortcut.actionType,
+        targetType: shortcut.targetType,
+        targetId: shortcut.targetId,
+        key: shortcut.key,
+      },
+    });
+  }
+
+  globalForStore.databaseDefaultsReady = true;
+}
+
+function mapMatch(match: Match): MatchRecord {
+  return {
+    id: match.id,
+    title: match.title,
+    opponentName: match.opponentName,
+    matchDate: match.matchDate?.toISOString() ?? null,
+    competition: match.competition,
+    venue: match.venue,
+    notes: match.notes,
+    createdAt: match.createdAt.toISOString(),
+    updatedAt: match.updatedAt.toISOString(),
+  };
+}
+
+function mapVideo(video: Video): VideoRecord {
+  return {
+    id: video.id,
+    matchId: video.matchId,
+    fileName: video.fileName,
+    fileSize: Number(video.fileSize),
+    durationSeconds: video.durationSeconds,
+    mimeType: video.mimeType,
+    lastModified: video.lastModified?.toISOString() ?? null,
+    storageType: "local",
+    createdAt: video.createdAt.toISOString(),
+    updatedAt: video.updatedAt.toISOString(),
+  };
+}
+
+function mapMomentType(type: MomentType): MomentTypeRecord {
+  return {
+    id: type.id,
+    name: type.name,
+    code: type.code,
+    color: type.color,
+    defaultShortcut: type.defaultShortcut,
+    createdAt: type.createdAt.toISOString(),
+    updatedAt: type.updatedAt.toISOString(),
+  };
+}
+
+function mapSubMomentType(type: SubMomentType): SubMomentTypeRecord {
+  return {
+    id: type.id,
+    name: type.name,
+    code: type.code,
+    requiresFieldLocation: type.requiresFieldLocation,
+    requiresGoalLocation: type.requiresGoalLocation,
+    createdAt: type.createdAt.toISOString(),
+    updatedAt: type.updatedAt.toISOString(),
+  };
+}
+
+function mapShortcut(shortcut: ShortcutSetting): ShortcutSettingRecord {
+  return {
+    id: shortcut.id,
+    actionType: shortcut.actionType,
+    targetType: shortcut.targetType,
+    targetId: shortcut.targetId,
+    key: shortcut.key,
+    createdAt: shortcut.createdAt.toISOString(),
+    updatedAt: shortcut.updatedAt.toISOString(),
+  };
+}
+
+function mapSubMoment(subMoment: PrismaSubMomentWithType): SubMomentRecord {
+  return {
+    id: subMoment.id,
+    momentId: subMoment.momentId,
+    subMomentTypeId: subMoment.subMomentTypeId,
+    timeSeconds: subMoment.timeSeconds,
+    fieldX: subMoment.fieldX,
+    fieldY: subMoment.fieldY,
+    goalX: subMoment.goalX,
+    goalY: subMoment.goalY,
+    notes: subMoment.notes,
+    createdAt: subMoment.createdAt.toISOString(),
+    updatedAt: subMoment.updatedAt.toISOString(),
+    subMomentType: mapSubMomentType(subMoment.subMomentType),
+  };
+}
+
+function mapMoment(moment: PrismaMomentWithRelations): MomentRecord {
+  return {
+    id: moment.id,
+    matchId: moment.matchId,
+    videoId: moment.videoId,
+    momentTypeId: moment.momentTypeId,
+    startTimeSeconds: moment.startTimeSeconds,
+    endTimeSeconds: moment.endTimeSeconds,
+    durationSeconds: moment.durationSeconds,
+    notes: moment.notes,
+    createdAt: moment.createdAt.toISOString(),
+    updatedAt: moment.updatedAt.toISOString(),
+    momentType: mapMomentType(moment.momentType),
+    subMoments: moment.subMoments.map(mapSubMoment),
+  };
+}
+
+function normalizeDateInput(date?: string | null) {
+  if (!date) {
+    return null;
+  }
+
+  const parsed = new Date(date);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeOptionalText(value?: string | null) {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : null;
+}
+
+function momentDuration(start: number, end: number) {
+  return Math.max(0, Math.round((end - start) * 10) / 10);
+}
+
+function hydrateMemorySubMoment(store: MemoryStore, subMoment: MemorySubMoment): SubMomentRecord {
+  const subMomentType = store.subMomentTypes.find((type) => type.id === subMoment.subMomentTypeId);
+  if (!subMomentType) {
+    throw new Error("Tipo de submomento não encontrado.");
+  }
+
+  return {
+    ...subMoment,
+    subMomentType,
+  };
+}
+
+function hydrateMemoryMoment(store: MemoryStore, moment: MemoryMoment): MomentRecord {
+  const momentType = store.momentTypes.find((type) => type.id === moment.momentTypeId);
+  if (!momentType) {
+    throw new Error("Tipo de momento não encontrado.");
+  }
+
+  return {
+    ...moment,
+    momentType,
+    subMoments: store.subMoments
+      .filter((subMoment) => subMoment.momentId === moment.id)
+      .map((subMoment) => hydrateMemorySubMoment(store, subMoment))
+      .sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)),
+  };
+}
+
+export async function listSettings(): Promise<SettingsPayload> {
+  if (shouldUseDatabase()) {
+    await ensureDatabaseDefaults();
+    const [momentTypes, subMomentTypes, shortcuts] = await Promise.all([
+      prisma.momentType.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.subMomentType.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.shortcutSetting.findMany({ orderBy: { createdAt: "asc" } }),
+    ]);
+
+    return {
+      momentTypes: momentTypes.map(mapMomentType),
+      subMomentTypes: subMomentTypes.map(mapSubMomentType),
+      shortcuts: shortcuts.map(mapShortcut),
+    };
+  }
+
+  const store = getMemoryStore();
+  return {
+    momentTypes: store.momentTypes,
+    subMomentTypes: store.subMomentTypes,
+    shortcuts: store.shortcuts,
+  };
+}
+
+export async function listMatches(): Promise<MatchSummary[]> {
+  if (shouldUseDatabase()) {
+    await ensureDatabaseDefaults();
+    const matches = await prisma.match.findMany({
+      include: {
+        videos: { orderBy: { updatedAt: "desc" }, take: 1 },
+        _count: { select: { moments: true } },
+      },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    return matches.map((match) => ({
+      ...mapMatch(match),
+      video: match.videos[0] ? mapVideo(match.videos[0]) : null,
+      momentCount: match._count.moments,
+    }));
+  }
+
+  const store = getMemoryStore();
+  return store.matches
+    .map((match) => ({
+      ...match,
+      video: store.videos.find((video) => video.matchId === match.id) ?? null,
+      momentCount: store.moments.filter((moment) => moment.matchId === match.id).length,
+    }))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+export async function getMatchDetail(matchId: string): Promise<MatchDetail | null> {
+  if (shouldUseDatabase()) {
+    await ensureDatabaseDefaults();
+    const match = await prisma.match.findUnique({
+      where: { id: matchId },
+      include: {
+        videos: { orderBy: { updatedAt: "desc" }, take: 1 },
+        moments: {
+          include: {
+            momentType: true,
+            subMoments: {
+              include: { subMomentType: true },
+              orderBy: { createdAt: "asc" },
+            },
+          },
+          orderBy: { startTimeSeconds: "asc" },
+        },
+      },
+    });
+
+    if (!match) {
+      return null;
+    }
+
+    return {
+      ...mapMatch(match),
+      video: match.videos[0] ? mapVideo(match.videos[0]) : null,
+      momentCount: match.moments.length,
+      moments: match.moments.map(mapMoment),
+    };
+  }
+
+  const store = getMemoryStore();
+  const match = store.matches.find((item) => item.id === matchId);
+  if (!match) {
+    return null;
+  }
+
+  const moments = store.moments
+    .filter((moment) => moment.matchId === matchId)
+    .map((moment) => hydrateMemoryMoment(store, moment))
+    .sort((a, b) => a.startTimeSeconds - b.startTimeSeconds);
+
+  return {
+    ...match,
+    video: store.videos.find((video) => video.matchId === matchId) ?? null,
+    momentCount: moments.length,
+    moments,
+  };
+}
+
+export async function createMatch(input: CreateMatchInput): Promise<MatchRecord> {
+  const title = input.title.trim();
+  const opponentName = input.opponentName.trim();
+
+  if (!title || !opponentName) {
+    throw new Error("Título e adversário são obrigatórios.");
+  }
+
+  if (shouldUseDatabase()) {
+    await ensureDatabaseDefaults();
+    const match = await prisma.match.create({
+      data: {
+        title,
+        opponentName,
+        matchDate: normalizeDateInput(input.matchDate),
+        competition: normalizeOptionalText(input.competition),
+        venue: normalizeOptionalText(input.venue),
+        notes: normalizeOptionalText(input.notes),
+      },
+    });
+    return mapMatch(match);
+  }
+
+  const store = getMemoryStore();
+  const createdAt = now();
+  const match: MatchRecord = {
+    id: id(),
+    title,
+    opponentName,
+    matchDate: normalizeDateInput(input.matchDate)?.toISOString() ?? null,
+    competition: normalizeOptionalText(input.competition),
+    venue: normalizeOptionalText(input.venue),
+    notes: normalizeOptionalText(input.notes),
+    createdAt,
+    updatedAt: createdAt,
+  };
+  store.matches.push(match);
+  return match;
+}
+
+export async function updateMatch(matchId: string, input: UpdateMatchInput): Promise<MatchRecord> {
+  if (shouldUseDatabase()) {
+    const match = await prisma.match.update({
+      where: { id: matchId },
+      data: {
+        ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.opponentName !== undefined ? { opponentName: input.opponentName.trim() } : {}),
+        ...(input.matchDate !== undefined ? { matchDate: normalizeDateInput(input.matchDate) } : {}),
+        ...(input.competition !== undefined ? { competition: normalizeOptionalText(input.competition) } : {}),
+        ...(input.venue !== undefined ? { venue: normalizeOptionalText(input.venue) } : {}),
+        ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+      },
+    });
+    return mapMatch(match);
+  }
+
+  const store = getMemoryStore();
+  const match = store.matches.find((item) => item.id === matchId);
+  if (!match) {
+    throw new Error("Jogo não encontrado.");
+  }
+
+  if (input.title !== undefined) {
+    match.title = input.title.trim();
+  }
+  if (input.opponentName !== undefined) {
+    match.opponentName = input.opponentName.trim();
+  }
+  if (input.matchDate !== undefined) {
+    match.matchDate = normalizeDateInput(input.matchDate)?.toISOString() ?? null;
+  }
+  if (input.competition !== undefined) {
+    match.competition = normalizeOptionalText(input.competition);
+  }
+  if (input.venue !== undefined) {
+    match.venue = normalizeOptionalText(input.venue);
+  }
+  if (input.notes !== undefined) {
+    match.notes = normalizeOptionalText(input.notes);
+  }
+  match.updatedAt = now();
+
+  return match;
+}
+
+export async function deleteMatch(matchId: string) {
+  if (shouldUseDatabase()) {
+    await prisma.match.delete({ where: { id: matchId } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  store.matches = store.matches.filter((match) => match.id !== matchId);
+  store.videos = store.videos.filter((video) => video.matchId !== matchId);
+  const deletedMomentIds = store.moments.filter((moment) => moment.matchId === matchId).map((moment) => moment.id);
+  store.moments = store.moments.filter((moment) => moment.matchId !== matchId);
+  store.subMoments = store.subMoments.filter((subMoment) => !deletedMomentIds.includes(subMoment.momentId));
+}
+
+export async function upsertVideoMetadata(matchId: string, input: VideoMetadataInput): Promise<VideoRecord> {
+  const lastModified = input.lastModified ? normalizeDateInput(input.lastModified) : null;
+
+  if (shouldUseDatabase()) {
+    await ensureDatabaseDefaults();
+    const existing = await prisma.video.findFirst({
+      where: { matchId },
+      orderBy: { updatedAt: "desc" },
+    });
+
+    const data = {
+      fileName: input.fileName,
+      fileSize: BigInt(input.fileSize),
+      durationSeconds: input.durationSeconds,
+      mimeType: input.mimeType,
+      lastModified,
+      storageType: "local",
+    };
+
+    const video = existing
+      ? await prisma.video.update({ where: { id: existing.id }, data })
+      : await prisma.video.create({ data: { ...data, matchId } });
+
+    return mapVideo(video);
+  }
+
+  const store = getMemoryStore();
+  const existing = store.videos.find((video) => video.matchId === matchId);
+  const timestamp = now();
+
+  if (existing) {
+    existing.fileName = input.fileName;
+    existing.fileSize = input.fileSize;
+    existing.durationSeconds = input.durationSeconds;
+    existing.mimeType = input.mimeType;
+    existing.lastModified = lastModified?.toISOString() ?? null;
+    existing.updatedAt = timestamp;
+    return existing;
+  }
+
+  const video: VideoRecord = {
+    id: id(),
+    matchId,
+    fileName: input.fileName,
+    fileSize: input.fileSize,
+    durationSeconds: input.durationSeconds,
+    mimeType: input.mimeType,
+    lastModified: lastModified?.toISOString() ?? null,
+    storageType: "local",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  store.videos.push(video);
+  return video;
+}
+
+export async function createMoment(input: CreateMomentInput): Promise<MomentRecord> {
+  const start = Math.max(0, input.startTimeSeconds);
+  const end = Math.max(start, input.endTimeSeconds);
+
+  if (shouldUseDatabase()) {
+    const moment = await prisma.moment.create({
+      data: {
+        matchId: input.matchId,
+        videoId: input.videoId ?? null,
+        momentTypeId: input.momentTypeId,
+        startTimeSeconds: start,
+        endTimeSeconds: end,
+        durationSeconds: momentDuration(start, end),
+        notes: normalizeOptionalText(input.notes),
+      },
+      include: {
+        momentType: true,
+        subMoments: { include: { subMomentType: true } },
+      },
+    });
+    return mapMoment(moment);
+  }
+
+  const store = getMemoryStore();
+  const momentType = store.momentTypes.find((type) => type.id === input.momentTypeId);
+  if (!momentType) {
+    throw new Error("Tipo de momento não encontrado.");
+  }
+
+  const timestamp = now();
+  const moment: MemoryMoment = {
+    id: id(),
+    matchId: input.matchId,
+    videoId: input.videoId ?? null,
+    momentTypeId: input.momentTypeId,
+    startTimeSeconds: start,
+    endTimeSeconds: end,
+    durationSeconds: momentDuration(start, end),
+    notes: normalizeOptionalText(input.notes),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  store.moments.push(moment);
+  return hydrateMemoryMoment(store, moment);
+}
+
+export async function updateMoment(momentId: string, input: UpdateMomentInput): Promise<MomentRecord> {
+  if (shouldUseDatabase()) {
+    const current = await prisma.moment.findUnique({ where: { id: momentId } });
+    if (!current) {
+      throw new Error("Momento não encontrado.");
+    }
+
+    const start = input.startTimeSeconds ?? current.startTimeSeconds;
+    const end = Math.max(start, input.endTimeSeconds ?? current.endTimeSeconds);
+    const moment = await prisma.moment.update({
+      where: { id: momentId },
+      data: {
+        ...(input.videoId !== undefined ? { videoId: input.videoId } : {}),
+        ...(input.momentTypeId !== undefined ? { momentTypeId: input.momentTypeId } : {}),
+        startTimeSeconds: start,
+        endTimeSeconds: end,
+        durationSeconds: momentDuration(start, end),
+        ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+      },
+      include: {
+        momentType: true,
+        subMoments: { include: { subMomentType: true }, orderBy: { createdAt: "asc" } },
+      },
+    });
+    return mapMoment(moment);
+  }
+
+  const store = getMemoryStore();
+  const moment = store.moments.find((item) => item.id === momentId);
+  if (!moment) {
+    throw new Error("Momento não encontrado.");
+  }
+
+  if (input.videoId !== undefined) {
+    moment.videoId = input.videoId;
+  }
+  if (input.momentTypeId !== undefined) {
+    moment.momentTypeId = input.momentTypeId;
+  }
+  if (input.startTimeSeconds !== undefined) {
+    moment.startTimeSeconds = Math.max(0, input.startTimeSeconds);
+  }
+  if (input.endTimeSeconds !== undefined) {
+    moment.endTimeSeconds = Math.max(moment.startTimeSeconds, input.endTimeSeconds);
+  }
+  moment.durationSeconds = momentDuration(moment.startTimeSeconds, moment.endTimeSeconds);
+  if (input.notes !== undefined) {
+    moment.notes = normalizeOptionalText(input.notes);
+  }
+  moment.updatedAt = now();
+
+  return hydrateMemoryMoment(store, moment);
+}
+
+export async function deleteMoment(momentId: string) {
+  if (shouldUseDatabase()) {
+    await prisma.moment.delete({ where: { id: momentId } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  store.moments = store.moments.filter((moment) => moment.id !== momentId);
+  store.subMoments = store.subMoments.filter((subMoment) => subMoment.momentId !== momentId);
+}
+
+export async function createSubMoment(input: CreateSubMomentInput): Promise<SubMomentRecord> {
+  if (shouldUseDatabase()) {
+    const subMoment = await prisma.subMoment.create({
+      data: {
+        momentId: input.momentId,
+        subMomentTypeId: input.subMomentTypeId,
+        timeSeconds: input.timeSeconds ?? null,
+        fieldX: input.fieldX ?? null,
+        fieldY: input.fieldY ?? null,
+        goalX: input.goalX ?? null,
+        goalY: input.goalY ?? null,
+        notes: normalizeOptionalText(input.notes),
+      },
+      include: { subMomentType: true },
+    });
+    return mapSubMoment(subMoment);
+  }
+
+  const store = getMemoryStore();
+  const subMomentType = store.subMomentTypes.find((type) => type.id === input.subMomentTypeId);
+  if (!subMomentType) {
+    throw new Error("Tipo de submomento não encontrado.");
+  }
+
+  const timestamp = now();
+  const subMoment: MemorySubMoment = {
+    id: id(),
+    momentId: input.momentId,
+    subMomentTypeId: input.subMomentTypeId,
+    timeSeconds: input.timeSeconds ?? null,
+    fieldX: input.fieldX ?? null,
+    fieldY: input.fieldY ?? null,
+    goalX: input.goalX ?? null,
+    goalY: input.goalY ?? null,
+    notes: normalizeOptionalText(input.notes),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  store.subMoments.push(subMoment);
+  return hydrateMemorySubMoment(store, subMoment);
+}
+
+export async function updateSubMoment(subMomentId: string, input: UpdateSubMomentInput): Promise<SubMomentRecord> {
+  if (shouldUseDatabase()) {
+    const subMoment = await prisma.subMoment.update({
+      where: { id: subMomentId },
+      data: {
+        ...(input.subMomentTypeId !== undefined ? { subMomentTypeId: input.subMomentTypeId } : {}),
+        ...(input.timeSeconds !== undefined ? { timeSeconds: input.timeSeconds } : {}),
+        ...(input.fieldX !== undefined ? { fieldX: input.fieldX } : {}),
+        ...(input.fieldY !== undefined ? { fieldY: input.fieldY } : {}),
+        ...(input.goalX !== undefined ? { goalX: input.goalX } : {}),
+        ...(input.goalY !== undefined ? { goalY: input.goalY } : {}),
+        ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+      },
+      include: { subMomentType: true },
+    });
+    return mapSubMoment(subMoment);
+  }
+
+  const store = getMemoryStore();
+  const subMoment = store.subMoments.find((item) => item.id === subMomentId);
+  if (!subMoment) {
+    throw new Error("Submomento não encontrado.");
+  }
+
+  if (input.subMomentTypeId !== undefined) {
+    subMoment.subMomentTypeId = input.subMomentTypeId;
+  }
+  if (input.timeSeconds !== undefined) {
+    subMoment.timeSeconds = input.timeSeconds;
+  }
+  if (input.fieldX !== undefined) {
+    subMoment.fieldX = input.fieldX;
+  }
+  if (input.fieldY !== undefined) {
+    subMoment.fieldY = input.fieldY;
+  }
+  if (input.goalX !== undefined) {
+    subMoment.goalX = input.goalX;
+  }
+  if (input.goalY !== undefined) {
+    subMoment.goalY = input.goalY;
+  }
+  if (input.notes !== undefined) {
+    subMoment.notes = normalizeOptionalText(input.notes);
+  }
+  subMoment.updatedAt = now();
+
+  return hydrateMemorySubMoment(store, subMoment);
+}
+
+export async function deleteSubMoment(subMomentId: string) {
+  if (shouldUseDatabase()) {
+    await prisma.subMoment.delete({ where: { id: subMomentId } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  store.subMoments = store.subMoments.filter((subMoment) => subMoment.id !== subMomentId);
+}
+
+export async function updateShortcut(shortcutId: string, key: string): Promise<ShortcutSettingRecord> {
+  if (shouldUseDatabase()) {
+    const shortcut = await prisma.shortcutSetting.update({
+      where: { id: shortcutId },
+      data: { key },
+    });
+    return mapShortcut(shortcut);
+  }
+
+  const store = getMemoryStore();
+  const shortcut = store.shortcuts.find((item) => item.id === shortcutId);
+  if (!shortcut) {
+    throw new Error("Atalho não encontrado.");
+  }
+  shortcut.key = key;
+  shortcut.updatedAt = now();
+  return shortcut;
+}
+
+export async function createMomentType(input: Pick<MomentTypeRecord, "name" | "code" | "color" | "defaultShortcut">) {
+  const timestamp = now();
+  const code = input.code.trim().toUpperCase();
+
+  if (shouldUseDatabase()) {
+    const type = await prisma.momentType.create({
+      data: {
+        name: input.name.trim(),
+        code,
+        color: input.color,
+        defaultShortcut: input.defaultShortcut,
+      },
+    });
+    await prisma.shortcutSetting.create({
+      data: {
+        actionType: "moment.toggle",
+        targetType: "momentType",
+        targetId: type.id,
+        key: input.defaultShortcut,
+      },
+    });
+    return mapMomentType(type);
+  }
+
+  const store = getMemoryStore();
+  const type: MomentTypeRecord = {
+    id: id(),
+    name: input.name.trim(),
+    code,
+    color: input.color,
+    defaultShortcut: input.defaultShortcut,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  store.momentTypes.push(type);
+  store.shortcuts.push({
+    id: id(),
+    actionType: "moment.toggle",
+    targetType: "momentType",
+    targetId: type.id,
+    key: type.defaultShortcut,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  });
+  return type;
+}
+
+export async function updateMomentType(
+  momentTypeId: string,
+  input: Partial<Pick<MomentTypeRecord, "name" | "code" | "color" | "defaultShortcut">>,
+) {
+  if (shouldUseDatabase()) {
+    const type = await prisma.momentType.update({
+      where: { id: momentTypeId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
+        ...(input.color !== undefined ? { color: input.color } : {}),
+        ...(input.defaultShortcut !== undefined ? { defaultShortcut: input.defaultShortcut } : {}),
+      },
+    });
+
+    if (input.defaultShortcut !== undefined) {
+      await prisma.shortcutSetting.updateMany({
+        where: { actionType: "moment.toggle", targetType: "momentType", targetId: momentTypeId },
+        data: { key: input.defaultShortcut },
+      });
+    }
+
+    return mapMomentType(type);
+  }
+
+  const store = getMemoryStore();
+  const type = store.momentTypes.find((item) => item.id === momentTypeId);
+  if (!type) {
+    throw new Error("Tipo de momento não encontrado.");
+  }
+  if (input.name !== undefined) {
+    type.name = input.name.trim();
+  }
+  if (input.code !== undefined) {
+    type.code = input.code.trim().toUpperCase();
+  }
+  if (input.color !== undefined) {
+    type.color = input.color;
+  }
+  if (input.defaultShortcut !== undefined) {
+    type.defaultShortcut = input.defaultShortcut;
+    const shortcut = store.shortcuts.find(
+      (item) => item.actionType === "moment.toggle" && item.targetType === "momentType" && item.targetId === momentTypeId,
+    );
+    if (shortcut) {
+      shortcut.key = input.defaultShortcut;
+      shortcut.updatedAt = now();
+    }
+  }
+  type.updatedAt = now();
+  return type;
+}
+
+export async function deleteMomentType(momentTypeId: string) {
+  if (shouldUseDatabase()) {
+    const count = await prisma.moment.count({ where: { momentTypeId } });
+    if (count > 0) {
+      throw new Error("Não é possível apagar um tipo com momentos associados.");
+    }
+    await prisma.shortcutSetting.deleteMany({ where: { targetType: "momentType", targetId: momentTypeId } });
+    await prisma.momentType.delete({ where: { id: momentTypeId } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  if (store.moments.some((moment) => moment.momentTypeId === momentTypeId)) {
+    throw new Error("Não é possível apagar um tipo com momentos associados.");
+  }
+  store.momentTypes = store.momentTypes.filter((type) => type.id !== momentTypeId);
+  store.shortcuts = store.shortcuts.filter((shortcut) => shortcut.targetId !== momentTypeId);
+}
+
+export async function createSubMomentType(
+  input: Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">,
+) {
+  const timestamp = now();
+  const code = input.code.trim().toUpperCase();
+
+  if (shouldUseDatabase()) {
+    const type = await prisma.subMomentType.create({
+      data: {
+        name: input.name.trim(),
+        code,
+        requiresFieldLocation: input.requiresFieldLocation,
+        requiresGoalLocation: input.requiresGoalLocation,
+      },
+    });
+    return mapSubMomentType(type);
+  }
+
+  const store = getMemoryStore();
+  const type: SubMomentTypeRecord = {
+    id: id(),
+    name: input.name.trim(),
+    code,
+    requiresFieldLocation: input.requiresFieldLocation,
+    requiresGoalLocation: input.requiresGoalLocation,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+  store.subMomentTypes.push(type);
+  return type;
+}
+
+export async function updateSubMomentType(
+  subMomentTypeId: string,
+  input: Partial<Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">>,
+) {
+  if (shouldUseDatabase()) {
+    const type = await prisma.subMomentType.update({
+      where: { id: subMomentTypeId },
+      data: {
+        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
+        ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
+        ...(input.requiresFieldLocation !== undefined ? { requiresFieldLocation: input.requiresFieldLocation } : {}),
+        ...(input.requiresGoalLocation !== undefined ? { requiresGoalLocation: input.requiresGoalLocation } : {}),
+      },
+    });
+    return mapSubMomentType(type);
+  }
+
+  const store = getMemoryStore();
+  const type = store.subMomentTypes.find((item) => item.id === subMomentTypeId);
+  if (!type) {
+    throw new Error("Tipo de submomento não encontrado.");
+  }
+  if (input.name !== undefined) {
+    type.name = input.name.trim();
+  }
+  if (input.code !== undefined) {
+    type.code = input.code.trim().toUpperCase();
+  }
+  if (input.requiresFieldLocation !== undefined) {
+    type.requiresFieldLocation = input.requiresFieldLocation;
+  }
+  if (input.requiresGoalLocation !== undefined) {
+    type.requiresGoalLocation = input.requiresGoalLocation;
+  }
+  type.updatedAt = now();
+  return type;
+}
+
+export async function deleteSubMomentType(subMomentTypeId: string) {
+  if (shouldUseDatabase()) {
+    const count = await prisma.subMoment.count({ where: { subMomentTypeId } });
+    if (count > 0) {
+      throw new Error("Não é possível apagar um tipo com submomentos associados.");
+    }
+    await prisma.subMomentType.delete({ where: { id: subMomentTypeId } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  if (store.subMoments.some((subMoment) => subMoment.subMomentTypeId === subMomentTypeId)) {
+    throw new Error("Não é possível apagar um tipo com submomentos associados.");
+  }
+  store.subMomentTypes = store.subMomentTypes.filter((type) => type.id !== subMomentTypeId);
+}

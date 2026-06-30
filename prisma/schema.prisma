@@ -1,0 +1,127 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String?
+  email     String?  @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Match {
+  id           String   @id @default(cuid())
+  title        String
+  opponentName String
+  matchDate    DateTime?
+  competition  String?
+  venue        String?
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  videos  Video[]
+  moments Moment[]
+}
+
+model Video {
+  id              String   @id @default(cuid())
+  matchId         String
+  fileName        String
+  fileSize        BigInt
+  durationSeconds Float
+  mimeType        String
+  lastModified    DateTime?
+  storageType     String   @default("local")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  match   Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  moments Moment[]
+
+  @@index([matchId])
+}
+
+model MomentType {
+  id              String   @id @default(cuid())
+  name            String
+  code            String   @unique
+  color           String
+  defaultShortcut String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  moments Moment[]
+}
+
+model Moment {
+  id               String   @id @default(cuid())
+  matchId          String
+  videoId          String?
+  momentTypeId     String
+  startTimeSeconds Float
+  endTimeSeconds   Float
+  durationSeconds  Float
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  match       Match       @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  video       Video?      @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  momentType  MomentType  @relation(fields: [momentTypeId], references: [id])
+  subMoments  SubMoment[]
+
+  @@index([matchId])
+  @@index([videoId])
+  @@index([momentTypeId])
+}
+
+model SubMomentType {
+  id                    String   @id @default(cuid())
+  name                  String
+  code                  String   @unique
+  requiresFieldLocation Boolean  @default(true)
+  requiresGoalLocation  Boolean  @default(false)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  subMoments SubMoment[]
+}
+
+model SubMoment {
+  id              String   @id @default(cuid())
+  momentId        String
+  subMomentTypeId String
+  timeSeconds     Float?
+  fieldX          Float?
+  fieldY          Float?
+  goalX           Float?
+  goalY           Float?
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  moment        Moment        @relation(fields: [momentId], references: [id], onDelete: Cascade)
+  subMomentType SubMomentType @relation(fields: [subMomentTypeId], references: [id])
+
+  @@index([momentId])
+  @@index([subMomentTypeId])
+}
+
+model ShortcutSetting {
+  id         String   @id @default(cuid())
+  actionType String
+  targetType String
+  targetId   String?
+  key        String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([actionType, targetType, targetId])
+}

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Análise Adversário">
+  <rect width="512" height="512" rx="96" fill="#061111"/>
+  <circle cx="384" cy="116" r="72" fill="#22d3ee" opacity=".16"/>
+  <path d="M88 144h336v224H88z" fill="#0b2323" stroke="#22d3ee" stroke-width="12"/>
+  <path d="M256 144v224M88 256h336" stroke="#e5f4f4" stroke-opacity=".55" stroke-width="7"/>
+  <circle cx="256" cy="256" r="58" fill="none" stroke="#22c55e" stroke-width="10"/>
+  <circle cx="331" cy="199" r="24" fill="#22d3ee"/>
+  <path d="M136 194h52v124h-52M376 194h-52v124h52" fill="none" stroke="#e5f4f4" stroke-opacity=".55" stroke-width="7"/>
+  <path d="M144 400h224" stroke="#22c55e" stroke-width="10" stroke-linecap="round"/>
+</svg>
