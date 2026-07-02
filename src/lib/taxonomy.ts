@@ -1,0 +1,29 @@
+import type { MomentTypeRecord, SubMomentTypeRecord } from "@/lib/domain";
+
+export const APP_NAME = "AP - Video Análise - Adversário";
+
+export const subMomentShortcutKeys = ["Q", "W", "E", "R", "T", "Y", "U", "I"];
+
+export function getSubMomentParentCode(subMomentType: SubMomentTypeRecord) {
+  const [parentCode] = subMomentType.code.split("_");
+  return parentCode || null;
+}
+
+export function getSubMomentTypesForMoment(
+  subMomentTypes: SubMomentTypeRecord[],
+  momentType: MomentTypeRecord | null,
+) {
+  if (!momentType) {
+    return [];
+  }
+
+  const typedSubMoments = subMomentTypes.filter(
+    (subMomentType) => getSubMomentParentCode(subMomentType) === momentType.code,
+  );
+
+  return typedSubMoments.length > 0 ? typedSubMoments : subMomentTypes;
+}
+
+export function getSubMomentShortcut(index: number) {
+  return subMomentShortcutKeys[index] ?? null;
+}

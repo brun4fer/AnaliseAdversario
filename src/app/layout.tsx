@@ -2,16 +2,17 @@ import type { Metadata, Viewport } from "next";
 
 import { AppShell } from "@/components/app-shell";
 import { PwaRegistrar } from "@/components/pwa-registrar";
+import { APP_NAME } from "@/lib/taxonomy";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Análise Adversário",
+  title: APP_NAME,
   description: "PWA para análise tática de futebol com vídeo local.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Análise Adversário",
+    title: APP_NAME,
   },
 };
 

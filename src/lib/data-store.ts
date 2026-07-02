@@ -123,6 +123,8 @@ async function ensureDatabaseDefaults() {
     savedMomentTypes.push(mapMomentType(saved));
   }
 
+  await mergeLegacyMomentTypes(savedMomentTypes);
+
   for (const type of defaultSubMomentTypes) {
     await prisma.subMomentType.upsert({
       where: { code: type.code },
@@ -140,6 +142,8 @@ async function ensureDatabaseDefaults() {
       },
     });
   }
+
+  await deleteUnusedLegacySubMomentTypes();
 
   for (const shortcut of buildDefaultShortcuts(savedMomentTypes)) {
     await prisma.shortcutSetting.upsert({
@@ -280,6 +284,73 @@ function momentDuration(start: number, end: number) {
   return Math.max(0, Math.round((end - start) * 10) / 10);
 }
 
+function sortByDefaultOrder<T extends { code: string; createdAt: string; name: string }>(
+  records: T[],
+  defaults: { code: string }[],
+) {
+  const order = new Map(defaults.map((item, index) => [item.code, index]));
+
+  return [...records].sort((a, b) => {
+    const aOrder = order.get(a.code) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = order.get(b.code) ?? Number.MAX_SAFE_INTEGER;
+
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    return a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name);
+  });
+}
+
+async function mergeLegacyMomentTypes(targetTypes: MomentTypeRecord[]) {
+  const bolaParadaType = targetTypes.find((type) => type.code === "BP");
+  if (!bolaParadaType) {
+    return;
+  }
+
+  const legacyTypes = await prisma.momentType.findMany({
+    where: { code: { in: ["BPO", "BPD"] } },
+  });
+
+  for (const legacyType of legacyTypes) {
+    await prisma.moment.updateMany({
+      where: { momentTypeId: legacyType.id },
+      data: { momentTypeId: bolaParadaType.id },
+    });
+    await prisma.shortcutSetting.deleteMany({
+      where: { targetType: "momentType", targetId: legacyType.id },
+    });
+    await prisma.momentType.delete({ where: { id: legacyType.id } });
+  }
+}
+
+async function deleteUnusedLegacySubMomentTypes() {
+  const legacySubMomentTypes = await prisma.subMomentType.findMany({
+    where: {
+      code: {
+        in: [
+          "OPORTUNIDADE",
+          "ESPACO",
+          "GOLO",
+          "REMATE",
+          "DEFESA_GR",
+          "A_CORRIGIR",
+          "PRESSAO_ALTA",
+          "BLOCO_BAIXO",
+          "ERRO_POSICIONAL",
+        ],
+      },
+    },
+    include: { _count: { select: { subMoments: true } } },
+  });
+
+  for (const legacyType of legacySubMomentTypes) {
+    if (legacyType._count.subMoments === 0) {
+      await prisma.subMomentType.delete({ where: { id: legacyType.id } });
+    }
+  }
+}
+
 function hydrateMemorySubMoment(store: MemoryStore, subMoment: MemorySubMoment): SubMomentRecord {
   const subMomentType = store.subMomentTypes.find((type) => type.id === subMoment.subMomentTypeId);
   if (!subMomentType) {
@@ -318,16 +389,16 @@ export async function listSettings(): Promise<SettingsPayload> {
     ]);
 
     return {
-      momentTypes: momentTypes.map(mapMomentType),
-      subMomentTypes: subMomentTypes.map(mapSubMomentType),
+      momentTypes: sortByDefaultOrder(momentTypes.map(mapMomentType), defaultMomentTypes),
+      subMomentTypes: sortByDefaultOrder(subMomentTypes.map(mapSubMomentType), defaultSubMomentTypes),
       shortcuts: shortcuts.map(mapShortcut),
     };
   }
 
   const store = getMemoryStore();
   return {
-    momentTypes: store.momentTypes,
-    subMomentTypes: store.subMomentTypes,
+    momentTypes: sortByDefaultOrder(store.momentTypes, defaultMomentTypes),
+    subMomentTypes: sortByDefaultOrder(store.subMomentTypes, defaultSubMomentTypes),
     shortcuts: store.shortcuts,
   };
 }

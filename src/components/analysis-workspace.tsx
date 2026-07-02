@@ -33,11 +33,13 @@ import type {
   MomentTypeRecord,
   SettingsPayload,
   SubMomentRecord,
+  SubMomentTypeRecord,
   UpdateMomentInput,
   VideoMetadataInput,
   VideoRecord,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
+import { getSubMomentShortcut, getSubMomentTypesForMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
 
 type ActiveMoment = {
@@ -99,6 +101,11 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     [match?.moments, selectedMomentId],
   );
 
+  const selectedSubMomentTypes = useMemo(
+    () => getSubMomentTypesForMoment(subMomentTypes, selectedMoment?.momentType ?? null),
+    [selectedMoment?.momentType, subMomentTypes],
+  );
+
   const filteredMoments = useMemo(() => {
     const moments = match?.moments ?? [];
     if (filter === "all") {
@@ -115,6 +122,14 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         (shortcut) => shortcut.actionType === "moment.toggle" && shortcut.targetType === "momentType" && shortcut.targetId === momentTypeId,
       )?.key ?? "—",
     [settings?.shortcuts],
+  );
+
+  const getShortcutForSubMomentType = useCallback(
+    (subMomentTypeId: string) => {
+      const index = selectedSubMomentTypes.findIndex((type) => type.id === subMomentTypeId);
+      return getSubMomentShortcut(index) ?? "";
+    },
+    [selectedSubMomentTypes],
   );
 
   const upsertMomentInState = useCallback((moment: MomentRecord) => {
@@ -200,12 +215,76 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     });
   }, []);
 
+  const handleAddSubMoment = useCallback(async (input: CreateSubMomentInput) => {
+    const saved = await apiFetch<SubMomentRecord>(`/api/moments/${input.momentId}/submoments`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+
+    setMatch((current) => {
+      if (!current) {
+        return current;
+      }
+      return {
+        ...current,
+        moments: current.moments.map((moment) =>
+          moment.id === input.momentId
+            ? {
+                ...moment,
+                subMoments: [...moment.subMoments, saved].sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)),
+              }
+            : moment,
+        ),
+      };
+    });
+    setNotice("Submomento guardado.");
+  }, []);
+
+  const handleQuickAddSubMoment = useCallback(
+    async (subMomentType: SubMomentTypeRecord) => {
+      if (!selectedMoment) {
+        setNotice("Selecione um momento para registar submomentos.");
+        return;
+      }
+
+      if (!player.sourceUrl) {
+        setNotice("Selecione primeiro o vídeo local do jogo.");
+        fileInputRef.current?.click();
+        return;
+      }
+
+      const currentVideoTime = roundSeconds(player.videoRef.current?.currentTime ?? player.currentTime);
+      const insideSelectedMoment =
+        currentVideoTime >= selectedMoment.startTimeSeconds - 0.25 &&
+        currentVideoTime <= selectedMoment.endTimeSeconds + 0.25;
+
+      if (!insideSelectedMoment) {
+        player.reviewSegment(selectedMoment.startTimeSeconds, selectedMoment.endTimeSeconds);
+        setNotice("Excerto aberto. Assinale o submomento no tempo certo.");
+        return;
+      }
+
+      await handleAddSubMoment({
+        momentId: selectedMoment.id,
+        subMomentTypeId: subMomentType.id,
+        timeSeconds: currentVideoTime,
+        fieldX: null,
+        fieldY: null,
+        goalX: null,
+        goalY: null,
+        notes: null,
+      });
+      setNotice(`${subMomentType.name} registado aos ${formatPreciseTime(currentVideoTime)}.`);
+    },
+    [handleAddSubMoment, player, selectedMoment],
+  );
+
   const shortcutBindings = useMemo<ShortcutBinding[]>(() => {
     if (!settings) {
       return [];
     }
 
-    return settings.shortcuts
+    const configuredBindings = settings.shortcuts
       .map((shortcut) => {
         if (shortcut.actionType === "moment.toggle" && shortcut.targetId) {
           const momentType = momentTypes.find((type) => type.id === shortcut.targetId);
@@ -229,7 +308,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         return handler ? { key: shortcut.key, handler } : null;
       })
       .filter(Boolean) as ShortcutBinding[];
-  }, [cancelLastActiveMoment, momentTypes, player, settings, toggleMoment]);
+
+    const subMomentBindings = selectedSubMomentTypes
+      .map((subMomentType, index) => {
+        const key = getSubMomentShortcut(index);
+        return key ? { key, handler: () => void handleQuickAddSubMoment(subMomentType) } : null;
+      })
+      .filter(Boolean) as ShortcutBinding[];
+
+    return [...configuredBindings, ...subMomentBindings];
+  }, [cancelLastActiveMoment, handleQuickAddSubMoment, momentTypes, player, selectedSubMomentTypes, settings, toggleMoment]);
 
   useKeyboardShortcuts(shortcutBindings, Boolean(settings));
 
@@ -333,26 +421,6 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     });
     setSelectedMomentId(null);
     setNotice("Momento apagado.");
-  }
-
-  async function handleAddSubMoment(input: CreateSubMomentInput) {
-    const saved = await apiFetch<SubMomentRecord>(`/api/moments/${input.momentId}/submoments`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    });
-
-    setMatch((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        moments: current.moments.map((moment) =>
-          moment.id === input.momentId ? { ...moment, subMoments: [...moment.subMoments, saved] } : moment,
-        ),
-      };
-    });
-    setNotice("Submomento guardado.");
   }
 
   async function handleDeleteSubMoment(subMomentId: string) {
@@ -497,12 +565,14 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
             <MomentDetailPanel
               moment={selectedMoment}
               momentTypes={momentTypes}
-              subMomentTypes={subMomentTypes}
+              subMomentTypes={selectedSubMomentTypes}
               currentTime={player.currentTime}
               saveSignal={saveSignal}
+              getSubMomentShortcut={getShortcutForSubMomentType}
               onSave={handleUpdateMoment}
               onDelete={handleDeleteMoment}
               onAddSubMoment={handleAddSubMoment}
+              onQuickAddSubMoment={handleQuickAddSubMoment}
               onDeleteSubMoment={handleDeleteSubMoment}
             />
           ) : null}
@@ -679,7 +749,7 @@ function MomentToolbar({
   onToggle: (momentType: MomentTypeRecord) => void;
 }) {
   return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
       {momentTypes.map((type) => {
         const active = activeMoments.some((moment) => moment.momentTypeId === type.id);
         return (

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { BarChart3, Goal, Settings, Trophy } from "lucide-react";
 
 import { cn } from "@/lib/cn";
+import { APP_NAME } from "@/lib/taxonomy";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
@@ -24,8 +25,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Goal size={22} strokeWidth={2.2} />
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold uppercase tracking-[0.24em] text-cyan-100">
-                Análise Adversário
+              <span className="block truncate text-sm font-semibold text-cyan-100">
+                {APP_NAME}
               </span>
               <span className="block truncate text-xs text-slate-400">Tática, vídeo local e momentos</span>
             </span>

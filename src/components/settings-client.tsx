@@ -197,7 +197,7 @@ function MomentTypesPanel({
 
   return (
     <Panel className="p-4">
-      <h2 className="font-semibold text-white">MomentTypes</h2>
+      <h2 className="font-semibold text-white">Momentos</h2>
       <div className="mt-4 space-y-3">
         {drafts.map((type) => (
           <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.55fr_0.55fr_0.65fr_auto]">
@@ -288,7 +288,7 @@ function SubMomentTypesPanel({
 
   return (
     <Panel className="p-4">
-      <h2 className="font-semibold text-white">SubMomentTypes</h2>
+      <h2 className="font-semibold text-white">Submomentos</h2>
       <div className="mt-4 space-y-3">
         {drafts.map((type) => (
           <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.7fr_auto_auto_auto]">

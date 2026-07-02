@@ -25,6 +25,7 @@ type MomentDetailPanelProps = {
   subMomentTypes: SubMomentTypeRecord[];
   currentTime: number;
   saveSignal: number;
+  getSubMomentShortcut: (subMomentTypeId: string) => string;
   onSave: (momentId: string, input: UpdateMomentInput) => Promise<void>;
   onDelete: (momentId: string) => Promise<void>;
   onAddSubMoment: (input: {
@@ -37,6 +38,7 @@ type MomentDetailPanelProps = {
     goalY: number | null;
     notes: string | null;
   }) => Promise<void>;
+  onQuickAddSubMoment: (subMomentType: SubMomentTypeRecord) => Promise<void>;
   onDeleteSubMoment: (subMomentId: string) => Promise<void>;
 };
 
@@ -46,9 +48,11 @@ export function MomentDetailPanel({
   subMomentTypes,
   currentTime,
   saveSignal,
+  getSubMomentShortcut,
   onSave,
   onDelete,
   onAddSubMoment,
+  onQuickAddSubMoment,
   onDeleteSubMoment,
 }: MomentDetailPanelProps) {
   const [momentTypeId, setMomentTypeId] = useState(moment.momentTypeId);
@@ -74,6 +78,12 @@ export function MomentDetailPanel({
     setEnd(String(moment.endTimeSeconds));
     setNotes(moment.notes ?? "");
   }, [moment]);
+
+  useEffect(() => {
+    setSubMomentTypeId((current) =>
+      subMomentTypes.some((type) => type.id === current) ? current : subMomentTypes[0]?.id ?? "",
+    );
+  }, [subMomentTypes]);
 
   useEffect(() => {
     if (saveSignal === lastSaveSignal.current) {
@@ -218,6 +228,39 @@ export function MomentDetailPanel({
           <div className="space-y-4">
             <div className="rounded-lg border border-white/10 bg-black/15 p-3">
               <div className="grid gap-3">
+                <div className="grid gap-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <FieldLabel>Registo rápido</FieldLabel>
+                    <span className="text-xs text-slate-500">{formatPreciseTime(currentTime)}</span>
+                  </div>
+                  {subMomentTypes.length === 0 ? (
+                    <p className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-500">
+                      Sem submomentos configurados para este momento.
+                    </p>
+                  ) : (
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {subMomentTypes.map((type) => {
+                        const shortcut = getSubMomentShortcut(type.id);
+                        return (
+                          <button
+                            key={type.id}
+                            type="button"
+                            className="grid min-h-11 grid-cols-[1fr_auto] items-center gap-2 rounded-md border border-white/10 bg-white/[0.06] px-3 py-2 text-left text-sm text-slate-100 transition hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-cyan-300/60"
+                            onClick={() => void onQuickAddSubMoment(type)}
+                          >
+                            <span className="min-w-0 break-words">{type.name}</span>
+                            {shortcut ? (
+                              <span className="rounded border border-cyan-300/20 bg-cyan-300/10 px-1.5 py-0.5 text-[11px] font-semibold text-cyan-100">
+                                {shortcut}
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid gap-2">
                   <FieldLabel>Submomento</FieldLabel>
                   <Select value={subMomentTypeId} onChange={(event) => setSubMomentTypeId(event.target.value)}>

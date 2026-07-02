@@ -1,7 +1,7 @@
 {
-  "name": "Análise Adversário",
-  "short_name": "Análise",
-  "description": "Análise tática de adversários com vídeo local.",
+  "name": "AP - Video Análise - Adversário",
+  "short_name": "AP - Video Análise - Adversário",
+  "description": "AP - Video Análise - Adversário.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

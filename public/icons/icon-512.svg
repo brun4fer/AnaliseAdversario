@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Análise Adversário">
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="AP - Video Análise - Adversário">
   <rect width="512" height="512" rx="96" fill="#061111"/>
   <circle cx="384" cy="116" r="72" fill="#22d3ee" opacity=".16"/>
   <path d="M88 144h336v224H88z" fill="#0b2323" stroke="#22d3ee" stroke-width="12"/>
