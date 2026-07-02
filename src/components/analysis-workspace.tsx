@@ -7,8 +7,10 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
+  Crosshair,
   FileVideo,
   Filter,
+  Goal,
   Pause,
   Play,
   Plus,
@@ -22,6 +24,7 @@ import {
 } from "lucide-react";
 
 import { MomentDetailPanel } from "@/components/moment-detail-panel";
+import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
@@ -39,7 +42,7 @@ import type {
   VideoRecord,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
-import { getSubMomentShortcut, getSubMomentTypesForMoment } from "@/lib/taxonomy";
+import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
 
 type ActiveMoment = {
@@ -51,6 +54,17 @@ type ActiveMoment = {
 type VideoWarning = {
   expected: VideoRecord;
   selected: VideoMetadataInput;
+};
+
+type Point = {
+  x: number;
+  y: number;
+};
+
+type PendingSubMoment = {
+  moment: MomentRecord;
+  subMomentType: SubMomentTypeRecord;
+  timeSeconds: number;
 };
 
 function createTemporaryId() {
@@ -73,6 +87,10 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
   const [saveSignal, setSaveSignal] = useState(0);
+  const [pendingSubMoment, setPendingSubMoment] = useState<PendingSubMoment | null>(null);
+  const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
+  const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
+  const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -104,6 +122,42 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const selectedSubMomentTypes = useMemo(
     () => getSubMomentTypesForMoment(subMomentTypes, selectedMoment?.momentType ?? null),
     [selectedMoment?.momentType, subMomentTypes],
+  );
+
+  const pendingMoment = useMemo(() => {
+    if (!pendingSubMoment) {
+      return null;
+    }
+
+    return match?.moments.find((moment) => moment.id === pendingSubMoment.moment.id) ?? pendingSubMoment.moment;
+  }, [match?.moments, pendingSubMoment]);
+
+  const pendingFieldMarkers = useMemo(
+    () =>
+      (pendingMoment?.subMoments ?? [])
+        .filter((subMoment) => subMoment.fieldX !== null && subMoment.fieldY !== null)
+        .map((subMoment) => ({
+          id: `field-${subMoment.id}`,
+          x: subMoment.fieldX as number,
+          y: subMoment.fieldY as number,
+          label: subMoment.subMomentType.name,
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+        })),
+    [pendingMoment?.subMoments],
+  );
+
+  const pendingGoalMarkers = useMemo(
+    () =>
+      (pendingMoment?.subMoments ?? [])
+        .filter((subMoment) => subMoment.goalX !== null && subMoment.goalY !== null)
+        .map((subMoment) => ({
+          id: `goal-${subMoment.id}`,
+          x: subMoment.goalX as number,
+          y: subMoment.goalY as number,
+          label: subMoment.subMomentType.name,
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+        })),
+    [pendingMoment?.subMoments],
   );
 
   const filteredMoments = useMemo(() => {
@@ -264,20 +318,61 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         return;
       }
 
-      await handleAddSubMoment({
-        momentId: selectedMoment.id,
-        subMomentTypeId: subMomentType.id,
+      player.pause();
+      setPendingFieldPoint(null);
+      setPendingGoalPoint(null);
+      setPendingSubMoment({
+        moment: selectedMoment,
+        subMomentType,
         timeSeconds: currentVideoTime,
-        fieldX: null,
-        fieldY: null,
-        goalX: null,
-        goalY: null,
+      });
+      setNotice(`${subMomentType.name}: assinale a zona no campo.`);
+    },
+    [player, selectedMoment],
+  );
+
+  const cancelPendingSubMoment = useCallback(() => {
+    setPendingSubMoment(null);
+    setPendingFieldPoint(null);
+    setPendingGoalPoint(null);
+    setSavingPendingSubMoment(false);
+  }, []);
+
+  const confirmPendingSubMoment = useCallback(async () => {
+    if (!pendingSubMoment) {
+      return;
+    }
+
+    const requiresGoalLocation = requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType);
+
+    if (!pendingFieldPoint) {
+      setNotice("Assinale primeiro a zona no campo.");
+      return;
+    }
+
+    if (requiresGoalLocation && !pendingGoalPoint) {
+      setNotice("Assinale também a zona na baliza.");
+      return;
+    }
+
+    setSavingPendingSubMoment(true);
+    try {
+      await handleAddSubMoment({
+        momentId: pendingSubMoment.moment.id,
+        subMomentTypeId: pendingSubMoment.subMomentType.id,
+        timeSeconds: pendingSubMoment.timeSeconds,
+        fieldX: pendingFieldPoint?.x ?? null,
+        fieldY: pendingFieldPoint?.y ?? null,
+        goalX: requiresGoalLocation ? pendingGoalPoint?.x ?? null : null,
+        goalY: requiresGoalLocation ? pendingGoalPoint?.y ?? null : null,
         notes: null,
       });
-      setNotice(`${subMomentType.name} registado aos ${formatPreciseTime(currentVideoTime)}.`);
-    },
-    [handleAddSubMoment, player, selectedMoment],
-  );
+      setNotice(`${pendingSubMoment.subMomentType.name} registado aos ${formatPreciseTime(pendingSubMoment.timeSeconds)}.`);
+      cancelPendingSubMoment();
+    } finally {
+      setSavingPendingSubMoment(false);
+    }
+  }, [cancelPendingSubMoment, handleAddSubMoment, pendingFieldPoint, pendingGoalPoint, pendingSubMoment]);
 
   const shortcutBindings = useMemo<ShortcutBinding[]>(() => {
     if (!settings) {
@@ -319,7 +414,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     return [...configuredBindings, ...subMomentBindings];
   }, [cancelLastActiveMoment, handleQuickAddSubMoment, momentTypes, player, selectedSubMomentTypes, settings, toggleMoment]);
 
-  useKeyboardShortcuts(shortcutBindings, Boolean(settings));
+  useKeyboardShortcuts(shortcutBindings, Boolean(settings) && !pendingSubMoment);
 
   function handleFileSelected(file: File | null) {
     if (!file) {
@@ -694,6 +789,21 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </aside>
       </div>
 
+      {pendingSubMoment ? (
+        <SubMomentLocationDialog
+          pendingSubMoment={pendingSubMoment}
+          fieldPoint={pendingFieldPoint}
+          goalPoint={pendingGoalPoint}
+          fieldMarkers={pendingFieldMarkers}
+          goalMarkers={pendingGoalMarkers}
+          saving={savingPendingSubMoment}
+          onFieldPointChange={setPendingFieldPoint}
+          onGoalPointChange={setPendingGoalPoint}
+          onCancel={cancelPendingSubMoment}
+          onSave={() => void confirmPendingSubMoment()}
+        />
+      ) : null}
+
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">
           {notice}
@@ -859,6 +969,88 @@ function MomentListItem({
           <Trash2 size={14} />
         </Button>
       </div>
+    </div>
+  );
+}
+
+function SubMomentLocationDialog({
+  pendingSubMoment,
+  fieldPoint,
+  goalPoint,
+  fieldMarkers,
+  goalMarkers,
+  saving,
+  onFieldPointChange,
+  onGoalPointChange,
+  onCancel,
+  onSave,
+}: {
+  pendingSubMoment: PendingSubMoment;
+  fieldPoint: Point | null;
+  goalPoint: Point | null;
+  fieldMarkers: SurfaceMarker[];
+  goalMarkers: SurfaceMarker[];
+  saving: boolean;
+  onFieldPointChange: (point: Point) => void;
+  onGoalPointChange: (point: Point) => void;
+  onCancel: () => void;
+  onSave: () => void;
+}) {
+  const requiresGoalLocation = requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType);
+  const saveDisabled = saving || !fieldPoint || (requiresGoalLocation && !goalPoint);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/86 p-4">
+      <Panel className="max-h-[92vh] w-full max-w-6xl overflow-y-auto border-cyan-300/30 bg-pitch-950 shadow-2xl backdrop-blur-none">
+        <div className="flex flex-col gap-3 border-b border-white/10 bg-white/[0.035] p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge className="border-cyan-300/25 bg-cyan-300/10 text-cyan-100">{pendingSubMoment.subMomentType.name}</Badge>
+              <span className="text-sm text-slate-400">{formatPreciseTime(pendingSubMoment.timeSeconds)}</span>
+            </div>
+            <h2 className="mt-2 text-lg font-semibold text-white">Assinalar submomento</h2>
+          </div>
+          <Button size="icon" variant="ghost" aria-label="Fechar" onClick={onCancel}>
+            <X size={17} />
+          </Button>
+        </div>
+
+        <div className={cn("grid gap-4 p-4", requiresGoalLocation ? "lg:grid-cols-[minmax(0,1fr)_24rem]" : "")}>
+          <div className="grid gap-2 rounded-md border border-white/10 bg-black/25 p-3">
+            <div className="flex items-center justify-between gap-3">
+              <FieldLabel>Campo</FieldLabel>
+              <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                <Crosshair size={12} />
+                {fieldPoint ? `${fieldPoint.x}%, ${fieldPoint.y}%` : "Clique no campo"}
+              </span>
+            </div>
+            <TacticalField value={fieldPoint} markers={fieldMarkers} onChange={onFieldPointChange} className="border-emerald-300/45" />
+          </div>
+
+          {requiresGoalLocation ? (
+            <div className="grid content-start gap-2 rounded-md border border-white/10 bg-black/25 p-3">
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Baliza</FieldLabel>
+                <span className="inline-flex items-center gap-1 text-xs text-slate-500">
+                  <Goal size={12} />
+                  {goalPoint ? `${goalPoint.x}%, ${goalPoint.y}%` : "Clique na baliza"}
+                </span>
+              </div>
+              <GoalTarget value={goalPoint} markers={goalMarkers} onChange={onGoalPointChange} className="border-cyan-300/45" />
+            </div>
+          ) : null}
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-white/10 bg-black/35 p-4 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={onCancel}>
+            Cancelar
+          </Button>
+          <Button variant="primary" onClick={onSave} disabled={saveDisabled}>
+            <Crosshair size={16} />
+            {saving ? "A guardar" : "Guardar submomento"}
+          </Button>
+        </div>
+      </Panel>
     </div>
   );
 }

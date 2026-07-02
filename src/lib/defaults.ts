@@ -6,6 +6,10 @@ import type {
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
+function requiresGoalLocation(code: string) {
+  return code.endsWith("_FINALIZACAO") || code.endsWith("_GOLO") || code.endsWith("_PENALTI");
+}
+
 export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-oo", name: "Organização Ofensiva", code: "OO", color: "#22c55e", defaultShortcut: "1", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-od", name: "Organização Defensiva", code: "OD", color: "#38bdf8", defaultShortcut: "2", createdAt: timestamp, updatedAt: timestamp },
@@ -14,7 +18,7 @@ export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-bp", name: "Bola Parada Defensiva/Ofensiva", code: "BP", color: "#a78bfa", defaultShortcut: "5", createdAt: timestamp, updatedAt: timestamp },
 ];
 
-export const defaultSubMomentTypes: SubMomentTypeRecord[] = [
+const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [
   { id: "smt-oo-pontape-saida", name: "Pontapé de Saída", code: "OO_PONTAPE_SAIDA", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
   { id: "smt-oo-saida-gr", name: "Saída do GR", code: "OO_SAIDA_GR", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
   { id: "smt-oo-construcao", name: "Construção", code: "OO_CONSTRUCAO", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
@@ -46,6 +50,12 @@ export const defaultSubMomentTypes: SubMomentTypeRecord[] = [
   { id: "smt-bp-finalizacao", name: "Finalização", code: "BP_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
   { id: "smt-bp-golo", name: "Golo", code: "BP_GOLO", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
 ];
+
+export const defaultSubMomentTypes: SubMomentTypeRecord[] = defaultSubMomentTypeDefinitions.map((type) => ({
+  ...type,
+  requiresFieldLocation: true,
+  requiresGoalLocation: requiresGoalLocation(type.code),
+}));
 
 export const defaultPlayerShortcuts: ShortcutSettingRecord[] = [
   { id: "sc-play", actionType: "player.togglePlay", targetType: "player", targetId: null, key: "Space", createdAt: timestamp, updatedAt: timestamp },

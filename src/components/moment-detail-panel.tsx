@@ -11,8 +11,10 @@ import type {
   UpdateMomentInput,
 } from "@/lib/domain";
 import { formatPreciseTime } from "@/lib/time";
+import { requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
+import { cn } from "@/lib/cn";
 import { Button, FieldLabel, Panel, Select, TextArea, TextInput, Badge } from "@/components/ui";
-import { GoalTarget, TacticalField } from "@/components/tactical-surfaces";
+import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
 
 type Point = {
   x: number;
@@ -65,18 +67,25 @@ export function MomentDetailPanel({
   const [subMomentNotes, setSubMomentNotes] = useState("");
   const [fieldPoint, setFieldPoint] = useState<Point | null>(null);
   const [goalPoint, setGoalPoint] = useState<Point | null>(null);
+  const [hoveredSubMomentId, setHoveredSubMomentId] = useState<string | null>(null);
+  const [selectedSubMomentId, setSelectedSubMomentId] = useState<string | null>(null);
   const lastSaveSignal = useRef(saveSignal);
 
   const selectedSubMomentType = useMemo(
     () => subMomentTypes.find((type) => type.id === subMomentTypeId) ?? subMomentTypes[0],
     [subMomentTypeId, subMomentTypes],
   );
+  const selectedSubMomentRequiresGoal = selectedSubMomentType
+    ? requiresGoalLocationForSubMoment(selectedSubMomentType)
+    : false;
 
   useEffect(() => {
     setMomentTypeId(moment.momentTypeId);
     setStart(String(moment.startTimeSeconds));
     setEnd(String(moment.endTimeSeconds));
     setNotes(moment.notes ?? "");
+    setHoveredSubMomentId(null);
+    setSelectedSubMomentId(null);
   }, [moment]);
 
   useEffect(() => {
@@ -84,6 +93,15 @@ export function MomentDetailPanel({
       subMomentTypes.some((type) => type.id === current) ? current : subMomentTypes[0]?.id ?? "",
     );
   }, [subMomentTypes]);
+
+  useEffect(() => {
+    if (selectedSubMomentId && !moment.subMoments.some((subMoment) => subMoment.id === selectedSubMomentId)) {
+      setSelectedSubMomentId(null);
+    }
+    if (hoveredSubMomentId && !moment.subMoments.some((subMoment) => subMoment.id === hoveredSubMomentId)) {
+      setHoveredSubMomentId(null);
+    }
+  }, [hoveredSubMomentId, moment.subMoments, selectedSubMomentId]);
 
   useEffect(() => {
     if (saveSignal === lastSaveSignal.current) {
@@ -114,14 +132,22 @@ export function MomentDetailPanel({
       return;
     }
 
+    if (!fieldPoint) {
+      return;
+    }
+
+    if (selectedSubMomentRequiresGoal && !goalPoint) {
+      return;
+    }
+
     await onAddSubMoment({
       momentId: moment.id,
       subMomentTypeId: selectedSubMomentType.id,
       timeSeconds: subMomentTime ? Number(subMomentTime) : null,
       fieldX: fieldPoint?.x ?? null,
       fieldY: fieldPoint?.y ?? null,
-      goalX: selectedSubMomentType.requiresGoalLocation ? goalPoint?.x ?? null : null,
-      goalY: selectedSubMomentType.requiresGoalLocation ? goalPoint?.y ?? null : null,
+      goalX: selectedSubMomentRequiresGoal ? goalPoint?.x ?? null : null,
+      goalY: selectedSubMomentRequiresGoal ? goalPoint?.y ?? null : null,
       notes: subMomentNotes || null,
     });
 
@@ -131,13 +157,30 @@ export function MomentDetailPanel({
     setGoalPoint(null);
   }
 
-  const existingFieldMarkers = moment.subMoments
-    .filter((subMoment) => subMoment.fieldX !== null && subMoment.fieldY !== null)
-    .map((subMoment) => ({ x: subMoment.fieldX as number, y: subMoment.fieldY as number }));
+  const highlightedSubMomentId = hoveredSubMomentId ?? selectedSubMomentId;
+  const selectedSubMoment = moment.subMoments.find((subMoment) => subMoment.id === selectedSubMomentId) ?? null;
 
-  const existingGoalMarkers = moment.subMoments
+  const existingFieldMarkers: SurfaceMarker[] = moment.subMoments
+    .filter((subMoment) => subMoment.fieldX !== null && subMoment.fieldY !== null)
+    .map((subMoment) => ({
+      id: `field-${subMoment.id}`,
+      x: subMoment.fieldX as number,
+      y: subMoment.fieldY as number,
+      label: subMoment.subMomentType.name,
+      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+      active: subMoment.id === highlightedSubMomentId,
+    }));
+
+  const existingGoalMarkers: SurfaceMarker[] = moment.subMoments
     .filter((subMoment) => subMoment.goalX !== null && subMoment.goalY !== null)
-    .map((subMoment) => ({ x: subMoment.goalX as number, y: subMoment.goalY as number }));
+    .map((subMoment) => ({
+      id: `goal-${subMoment.id}`,
+      x: subMoment.goalX as number,
+      y: subMoment.goalY as number,
+      label: subMoment.subMomentType.name,
+      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+      active: subMoment.id === highlightedSubMomentId,
+    }));
 
   return (
     <Panel className="overflow-hidden">
@@ -212,17 +255,15 @@ export function MomentDetailPanel({
               <TacticalField value={fieldPoint} markers={existingFieldMarkers} onChange={setFieldPoint} />
             </div>
 
-            {selectedSubMomentType?.requiresGoalLocation ? (
-              <div className="grid gap-2">
-                <div className="flex items-center justify-between gap-3">
-                  <FieldLabel>Baliza</FieldLabel>
-                  <span className="text-xs text-slate-500">
-                    {goalPoint ? `${goalPoint.x}%, ${goalPoint.y}%` : "Clique na baliza"}
-                  </span>
-                </div>
-                <GoalTarget value={goalPoint} markers={existingGoalMarkers} onChange={setGoalPoint} />
+            <div className="grid gap-2">
+              <div className="flex items-center justify-between gap-3">
+                <FieldLabel>Baliza</FieldLabel>
+                <span className="text-xs text-slate-500">
+                  {goalPoint ? `${goalPoint.x}%, ${goalPoint.y}%` : "Clique na baliza"}
+                </span>
               </div>
-            ) : null}
+              <GoalTarget value={goalPoint} markers={existingGoalMarkers} onChange={setGoalPoint} />
+            </div>
           </div>
 
           <div className="space-y-4">
@@ -293,7 +334,12 @@ export function MomentDetailPanel({
                   <FieldLabel>Nota</FieldLabel>
                   <TextArea value={subMomentNotes} onChange={(event) => setSubMomentNotes(event.target.value)} />
                 </div>
-                <Button type="button" variant="primary" onClick={() => void addSubMoment()}>
+                <Button
+                  type="button"
+                  variant="primary"
+                  disabled={!fieldPoint || (selectedSubMomentRequiresGoal && !goalPoint)}
+                  onClick={() => void addSubMoment()}
+                >
                   <Crosshair size={16} />
                   Adicionar submomento
                 </Button>
@@ -308,9 +354,19 @@ export function MomentDetailPanel({
                 </p>
               ) : (
                 moment.subMoments.map((subMoment) => (
-                  <SubMomentItem key={subMoment.id} subMoment={subMoment} onDelete={onDeleteSubMoment} />
+                  <SubMomentItem
+                    key={subMoment.id}
+                    subMoment={subMoment}
+                    active={subMoment.id === highlightedSubMomentId}
+                    selected={subMoment.id === selectedSubMomentId}
+                    onSelect={() => setSelectedSubMomentId(subMoment.id)}
+                    onHoverStart={() => setHoveredSubMomentId(subMoment.id)}
+                    onHoverEnd={() => setHoveredSubMomentId(null)}
+                    onDelete={onDeleteSubMoment}
+                  />
                 ))
               )}
+              {selectedSubMoment ? <SubMomentDetails subMoment={selectedSubMoment} /> : null}
             </div>
           </div>
         </div>
@@ -321,15 +377,33 @@ export function MomentDetailPanel({
 
 function SubMomentItem({
   subMoment,
+  active,
+  selected,
+  onSelect,
+  onHoverStart,
+  onHoverEnd,
   onDelete,
 }: {
   subMoment: SubMomentRecord;
+  active: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onHoverStart: () => void;
+  onHoverEnd: () => void;
   onDelete: (subMomentId: string) => Promise<void>;
 }) {
   return (
-    <div className="rounded-md border border-white/10 bg-white/[0.035] p-3">
+    <div
+      className={cn(
+        "rounded-md border p-3 transition",
+        active ? "border-amber-200/70 bg-amber-300/10 shadow-[0_0_18px_rgba(252,211,77,0.16)]" : "border-white/10 bg-white/[0.035]",
+        selected && "ring-1 ring-cyan-300/45",
+      )}
+      onMouseEnter={onHoverStart}
+      onMouseLeave={onHoverEnd}
+    >
       <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
+        <button type="button" className="min-w-0 flex-1 text-left" onClick={onSelect}>
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{subMoment.subMomentType.name}</Badge>
             {subMoment.timeSeconds !== null ? <span className="text-xs text-slate-500">{formatPreciseTime(subMoment.timeSeconds)}</span> : null}
@@ -347,7 +421,7 @@ function SubMomentItem({
             ) : null}
           </div>
           {subMoment.notes ? <p className="mt-2 text-sm text-slate-300">{subMoment.notes}</p> : null}
-        </div>
+        </button>
         <Button
           type="button"
           size="icon"
@@ -364,4 +438,33 @@ function SubMomentItem({
       </div>
     </div>
   );
+}
+
+function SubMomentDetails({ subMoment }: { subMoment: SubMomentRecord }) {
+  return (
+    <div className="rounded-md border border-cyan-300/25 bg-cyan-300/[0.06] p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge className="border-cyan-300/30 bg-cyan-300/10 text-cyan-100">{subMoment.subMomentType.name}</Badge>
+        {subMoment.timeSeconds !== null ? <span className="text-xs text-cyan-100">{formatPreciseTime(subMoment.timeSeconds)}</span> : null}
+      </div>
+      <dl className="mt-3 grid gap-2 text-sm">
+        <DetailRow label="Campo" value={formatPoint(subMoment.fieldX, subMoment.fieldY)} />
+        <DetailRow label="Baliza" value={formatPoint(subMoment.goalX, subMoment.goalY)} />
+        <DetailRow label="Nota" value={subMoment.notes ?? "Sem nota"} />
+      </dl>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="grid grid-cols-[4.5rem_1fr] gap-2">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="min-w-0 text-slate-200">{value}</dd>
+    </div>
+  );
+}
+
+function formatPoint(x: number | null, y: number | null) {
+  return x !== null && y !== null ? `${x}%, ${y}%` : "Sem marcação";
 }

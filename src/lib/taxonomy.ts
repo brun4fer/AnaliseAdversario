@@ -27,3 +27,12 @@ export function getSubMomentTypesForMoment(
 export function getSubMomentShortcut(index: number) {
   return subMomentShortcutKeys[index] ?? null;
 }
+
+export function requiresGoalLocationForSubMoment(subMomentType: SubMomentTypeRecord) {
+  return (
+    subMomentType.requiresGoalLocation ||
+    subMomentType.code.endsWith("_FINALIZACAO") ||
+    subMomentType.code.endsWith("_GOLO") ||
+    subMomentType.code.endsWith("_PENALTI")
+  );
+}
