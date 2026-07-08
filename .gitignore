@@ -31,3 +31,6 @@ prisma/dev.db
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.vercel
+.env*

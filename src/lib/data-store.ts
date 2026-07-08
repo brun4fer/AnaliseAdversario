@@ -67,7 +67,10 @@ type PrismaSubMomentWithType = Prisma.SubMomentGetPayload<{
 const globalForStore = globalThis as unknown as {
   memoryStore?: MemoryStore;
   databaseDefaultsReady?: boolean;
+  databaseDefaultsVersion?: string;
 };
+
+const databaseDefaultsVersion = "2026-07-bpd-bpo";
 
 function now() {
   return new Date().toISOString();
@@ -98,7 +101,10 @@ function shouldUseDatabase() {
 }
 
 async function ensureDatabaseDefaults() {
-  if (!shouldUseDatabase() || globalForStore.databaseDefaultsReady) {
+  if (
+    !shouldUseDatabase() ||
+    (globalForStore.databaseDefaultsReady && globalForStore.databaseDefaultsVersion === databaseDefaultsVersion)
+  ) {
     return;
   }
 
@@ -123,7 +129,7 @@ async function ensureDatabaseDefaults() {
     savedMomentTypes.push(mapMomentType(saved));
   }
 
-  await mergeLegacyMomentTypes(savedMomentTypes);
+  await migrateLegacySetPieceMomentTypes(savedMomentTypes);
 
   for (const type of defaultSubMomentTypes) {
     await prisma.subMomentType.upsert({
@@ -165,6 +171,7 @@ async function ensureDatabaseDefaults() {
   }
 
   globalForStore.databaseDefaultsReady = true;
+  globalForStore.databaseDefaultsVersion = databaseDefaultsVersion;
 }
 
 function mapMatch(match: Match): MatchRecord {
@@ -302,20 +309,20 @@ function sortByDefaultOrder<T extends { code: string; createdAt: string; name: s
   });
 }
 
-async function mergeLegacyMomentTypes(targetTypes: MomentTypeRecord[]) {
-  const bolaParadaType = targetTypes.find((type) => type.code === "BP");
-  if (!bolaParadaType) {
+async function migrateLegacySetPieceMomentTypes(targetTypes: MomentTypeRecord[]) {
+  const offensiveSetPieceType = targetTypes.find((type) => type.code === "BPO");
+  if (!offensiveSetPieceType) {
     return;
   }
 
   const legacyTypes = await prisma.momentType.findMany({
-    where: { code: { in: ["BPO", "BPD"] } },
+    where: { code: "BP" },
   });
 
   for (const legacyType of legacyTypes) {
     await prisma.moment.updateMany({
       where: { momentTypeId: legacyType.id },
-      data: { momentTypeId: bolaParadaType.id },
+      data: { momentTypeId: offensiveSetPieceType.id },
     });
     await prisma.shortcutSetting.deleteMany({
       where: { targetType: "momentType", targetId: legacyType.id },

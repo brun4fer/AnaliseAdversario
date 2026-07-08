@@ -11,7 +11,8 @@ const momentTypes = [
   { name: "Organização Defensiva", code: "OD", color: "#38bdf8", defaultShortcut: "2" },
   { name: "Transição Ofensiva", code: "TO", color: "#f59e0b", defaultShortcut: "3" },
   { name: "Transição Defensiva", code: "TD", color: "#ef4444", defaultShortcut: "4" },
-  { name: "Bola Parada Defensiva/Ofensiva", code: "BP", color: "#a78bfa", defaultShortcut: "5" },
+  { name: "Bola Parada Defensiva", code: "BPD", color: "#a78bfa", defaultShortcut: "5" },
+  { name: "Bola Parada Ofensiva", code: "BPO", color: "#ec4899", defaultShortcut: "6" },
 ];
 
 const subMomentTypeDefinitions = [
@@ -92,15 +93,15 @@ async function main() {
     });
   }
 
-  if (savedMomentTypeIds.BP) {
+  if (savedMomentTypeIds.BPO) {
     const legacyTypes = await prisma.momentType.findMany({
-      where: { code: { in: ["BPO", "BPD"] } },
+      where: { code: "BP" },
     });
 
     for (const legacyType of legacyTypes) {
       await prisma.moment.updateMany({
         where: { momentTypeId: legacyType.id },
-        data: { momentTypeId: savedMomentTypeIds.BP },
+        data: { momentTypeId: savedMomentTypeIds.BPO },
       });
       await prisma.shortcutSetting.deleteMany({
         where: { targetType: "momentType", targetId: legacyType.id },

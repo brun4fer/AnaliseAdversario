@@ -1,13 +1,17 @@
 {
-  "name": "AP - Video Análise - Adversário",
-  "short_name": "AP - Video Análise - Adversário",
-  "description": "AP - Video Análise - Adversário.",
+  "id": "/",
+  "name": "AP - Video Analise - Adversario",
+  "short_name": "AP Video",
+  "description": "Aplicacao PWA para analise tatica de futebol com video local.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "prefer_related_applications": false,
   "background_color": "#061111",
   "theme_color": "#061111",
   "orientation": "landscape-primary",
+  "categories": ["sports", "productivity", "utilities"],
   "icons": [
     {
       "src": "/icons/icon-192.svg",

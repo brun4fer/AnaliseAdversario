@@ -8,6 +8,7 @@ import {
   ChevronsRight,
   Clock,
   Crosshair,
+  Download,
   FileVideo,
   Filter,
   Goal,
@@ -44,6 +45,7 @@ import type {
 import { apiFetch } from "@/lib/http";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
+import { downloadBlob, exportMomentClip } from "@/lib/video-export";
 
 type ActiveMoment = {
   id: string;
@@ -91,6 +93,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
   const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
+  const [exportingMomentId, setExportingMomentId] = useState<string | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -540,6 +544,38 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     player.reviewSegment(moment.startTimeSeconds, moment.endTimeSeconds);
   }
 
+  async function handleExportMoment(moment: MomentRecord) {
+    if (!match) {
+      return;
+    }
+
+    if (!player.sourceUrl) {
+      setNotice("Selecione primeiro o vídeo local do jogo.");
+      fileInputRef.current?.click();
+      return;
+    }
+
+    setExportingMomentId(moment.id);
+    setExportStatus("A preparar exportação...");
+    player.pause();
+
+    try {
+      const exported = await exportMomentClip({
+        sourceUrl: player.sourceUrl,
+        match,
+        moment,
+        onStatus: setExportStatus,
+      });
+      downloadBlob(exported.blob, exported.fileName);
+      setNotice(`Excerto exportado: ${exported.fileName}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Não foi possível exportar o excerto.");
+    } finally {
+      setExportingMomentId(null);
+      setExportStatus(null);
+    }
+  }
+
   if (loading) {
     return <div className="h-[70vh] animate-pulse rounded-lg border border-white/10 bg-white/[0.04]" />;
   }
@@ -663,8 +699,12 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               subMomentTypes={selectedSubMomentTypes}
               currentTime={player.currentTime}
               saveSignal={saveSignal}
+              canExport={Boolean(player.sourceUrl)}
+              exporting={exportingMomentId === selectedMoment.id}
+              exportStatus={exportingMomentId === selectedMoment.id ? exportStatus : null}
               getSubMomentShortcut={getShortcutForSubMomentType}
               onSave={handleUpdateMoment}
+              onExport={handleExportMoment}
               onDelete={handleDeleteMoment}
               onAddSubMoment={handleAddSubMoment}
               onQuickAddSubMoment={handleQuickAddSubMoment}
@@ -757,7 +797,10 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                       key={moment.id}
                       moment={moment}
                       active={selectedMomentId === moment.id}
+                      canExport={Boolean(player.sourceUrl)}
+                      exporting={exportingMomentId === moment.id}
                       onReview={reviewMoment}
+                      onExport={handleExportMoment}
                       onDelete={handleDeleteMoment}
                     />
                   ))}
@@ -859,7 +902,7 @@ function MomentToolbar({
   onToggle: (momentType: MomentTypeRecord) => void;
 }) {
   return (
-    <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
       {momentTypes.map((type) => {
         const active = activeMoments.some((moment) => moment.momentTypeId === type.id);
         return (
@@ -939,12 +982,18 @@ function Timeline({
 function MomentListItem({
   moment,
   active,
+  canExport,
+  exporting,
   onReview,
+  onExport,
   onDelete,
 }: {
   moment: MomentRecord;
   active: boolean;
+  canExport: boolean;
+  exporting: boolean;
   onReview: (moment: MomentRecord) => void;
+  onExport: (moment: MomentRecord) => Promise<void>;
   onDelete: (momentId: string) => Promise<void>;
 }) {
   return (
@@ -960,10 +1009,14 @@ function MomentListItem({
         </p>
         {moment.subMoments.length > 0 ? <p className="mt-2 text-xs text-cyan-100">{moment.subMoments.length} submomentos</p> : null}
       </button>
-      <div className="mt-3 flex gap-2">
-        <Button size="sm" variant="secondary" className="flex-1" onClick={() => onReview(moment)}>
+      <div className="mt-3 grid grid-cols-[1fr_1fr_auto] gap-2">
+        <Button size="sm" variant="secondary" onClick={() => onReview(moment)}>
           <Play size={14} />
           Rever
+        </Button>
+        <Button size="sm" variant="secondary" onClick={() => void onExport(moment)} disabled={!canExport || exporting}>
+          <Download size={14} />
+          {exporting ? "A exportar" : "Exportar"}
         </Button>
         <Button size="sm" variant="danger" onClick={() => void onDelete(moment.id)} aria-label="Apagar momento">
           <Trash2 size={14} />

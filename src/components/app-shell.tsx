@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BarChart3, Goal, Settings, Trophy } from "lucide-react";
 
+import { PwaInstallButton } from "@/components/pwa-install-button";
 import { cn } from "@/lib/cn";
 import { APP_NAME } from "@/lib/taxonomy";
 
@@ -32,25 +33,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
           </Link>
 
-          <nav className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = pathname === item.href;
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-slate-300 transition hover:bg-white/[0.08] hover:text-white",
-                    active && "bg-cyan-300/12 text-cyan-100 ring-1 ring-cyan-300/20",
-                  )}
-                >
-                  <Icon size={16} />
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
+          <div className="flex items-center gap-2">
+            <PwaInstallButton />
+            <nav className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
+              {navItems.map((item) => {
+                const Icon = item.icon;
+                const active = pathname === item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-slate-300 transition hover:bg-white/[0.08] hover:text-white",
+                      active && "bg-cyan-300/12 text-cyan-100 ring-1 ring-cyan-300/20",
+                    )}
+                  >
+                    <Icon size={16} />
+                    <span className="hidden sm:inline">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6">{children}</main>

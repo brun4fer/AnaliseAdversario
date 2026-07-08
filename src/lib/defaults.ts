@@ -15,7 +15,8 @@ export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-od", name: "Organização Defensiva", code: "OD", color: "#38bdf8", defaultShortcut: "2", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-to", name: "Transição Ofensiva", code: "TO", color: "#f59e0b", defaultShortcut: "3", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-td", name: "Transição Defensiva", code: "TD", color: "#ef4444", defaultShortcut: "4", createdAt: timestamp, updatedAt: timestamp },
-  { id: "mt-bp", name: "Bola Parada Defensiva/Ofensiva", code: "BP", color: "#a78bfa", defaultShortcut: "5", createdAt: timestamp, updatedAt: timestamp },
+  { id: "mt-bpd", name: "Bola Parada Defensiva", code: "BPD", color: "#a78bfa", defaultShortcut: "5", createdAt: timestamp, updatedAt: timestamp },
+  { id: "mt-bpo", name: "Bola Parada Ofensiva", code: "BPO", color: "#ec4899", defaultShortcut: "6", createdAt: timestamp, updatedAt: timestamp },
 ];
 
 const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [

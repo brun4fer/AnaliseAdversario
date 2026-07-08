@@ -4,6 +4,11 @@ export const APP_NAME = "AP - Video Análise - Adversário";
 
 export const subMomentShortcutKeys = ["Q", "W", "E", "R", "T", "Y", "U", "I"];
 
+const sharedSubMomentParentCodes: Record<string, string> = {
+  BPD: "BP",
+  BPO: "BP",
+};
+
 export function getSubMomentParentCode(subMomentType: SubMomentTypeRecord) {
   const [parentCode] = subMomentType.code.split("_");
   return parentCode || null;
@@ -17,8 +22,9 @@ export function getSubMomentTypesForMoment(
     return [];
   }
 
+  const parentCode = sharedSubMomentParentCodes[momentType.code] ?? momentType.code;
   const typedSubMoments = subMomentTypes.filter(
-    (subMomentType) => getSubMomentParentCode(subMomentType) === momentType.code,
+    (subMomentType) => getSubMomentParentCode(subMomentType) === parentCode,
   );
 
   return typedSubMoments.length > 0 ? typedSubMoments : subMomentTypes;

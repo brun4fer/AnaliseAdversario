@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Crosshair, Goal, Save, Trash2 } from "lucide-react";
+import { Crosshair, Download, Goal, Save, Trash2 } from "lucide-react";
 
 import type {
   MomentRecord,
@@ -27,8 +27,12 @@ type MomentDetailPanelProps = {
   subMomentTypes: SubMomentTypeRecord[];
   currentTime: number;
   saveSignal: number;
+  canExport: boolean;
+  exporting: boolean;
+  exportStatus: string | null;
   getSubMomentShortcut: (subMomentTypeId: string) => string;
   onSave: (momentId: string, input: UpdateMomentInput) => Promise<void>;
+  onExport: (moment: MomentRecord) => Promise<void>;
   onDelete: (momentId: string) => Promise<void>;
   onAddSubMoment: (input: {
     momentId: string;
@@ -50,8 +54,12 @@ export function MomentDetailPanel({
   subMomentTypes,
   currentTime,
   saveSignal,
+  canExport,
+  exporting,
+  exportStatus,
   getSubMomentShortcut,
   onSave,
+  onExport,
   onDelete,
   onAddSubMoment,
   onQuickAddSubMoment,
@@ -195,8 +203,13 @@ export function MomentDetailPanel({
             </span>
           </div>
           <h2 className="mt-2 truncate text-lg font-semibold text-white">Detalhe do momento</h2>
+          {exporting && exportStatus ? <p className="mt-2 text-sm text-cyan-100">{exportStatus}</p> : null}
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={() => void onExport(moment)} disabled={!canExport || exporting}>
+            <Download size={16} />
+            {exporting ? "A exportar" : "Exportar excerto"}
+          </Button>
           <Button variant="secondary" onClick={() => void saveMoment()} disabled={saving}>
             <Save size={16} />
             {saving ? "A guardar" : "Guardar"}
