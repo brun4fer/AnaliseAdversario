@@ -1,12 +1,14 @@
 import type { MomentTypeRecord, SubMomentTypeRecord } from "@/lib/domain";
 
-export const APP_NAME = "AP - Video Análise - Adversário";
+export const APP_NAME = "AP - Opponent Video Analysis";
 
 export const subMomentShortcutKeys = ["Q", "W", "E", "R", "T", "Y", "U", "I"];
 
 const sharedSubMomentParentCodes: Record<string, string> = {
   BPD: "BP",
   BPO: "BP",
+  DSP: "SP",
+  OSP: "SP",
 };
 
 export function getSubMomentParentCode(subMomentType: SubMomentTypeRecord) {
@@ -37,6 +39,9 @@ export function getSubMomentShortcut(index: number) {
 export function requiresGoalLocationForSubMoment(subMomentType: SubMomentTypeRecord) {
   return (
     subMomentType.requiresGoalLocation ||
+    subMomentType.code.endsWith("_FINISHING") ||
+    subMomentType.code.endsWith("_GOAL") ||
+    subMomentType.code.endsWith("_PENALTY") ||
     subMomentType.code.endsWith("_FINALIZACAO") ||
     subMomentType.code.endsWith("_GOLO") ||
     subMomentType.code.endsWith("_PENALTI")

@@ -49,7 +49,7 @@ export function useVideoPlayer() {
       await video.play();
       setIsPlaying(true);
     } catch {
-      setError("Não foi possível reproduzir este vídeo. Para melhor compatibilidade, use MP4 com codec H.264.");
+      setError("Could not play this video. For better compatibility, use MP4 with H.264 codec.");
     }
   }, []);
 

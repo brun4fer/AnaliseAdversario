@@ -63,8 +63,8 @@ export function PwaInstallButton() {
   return (
     <Button size="sm" variant="primary" onClick={() => void installApp()}>
       <Download size={15} />
-      <span className="hidden sm:inline">Instalar app</span>
-      <span className="sm:hidden">Instalar</span>
+      <span className="hidden sm:inline">Install app</span>
+      <span className="sm:hidden">Install</span>
     </Button>
   );
 }

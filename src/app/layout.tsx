@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "PWA para análise tática de futebol com vídeo local.",
+  description: "PWA for tactical football analysis with local video.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -29,7 +29,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="pt-PT" suppressHydrationWarning>
+    <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <PwaRegistrar />
         <AppShell>{children}</AppShell>

@@ -79,7 +79,7 @@ export function TacticalField({ value, onChange, className, markers = [] }: Surf
         }
         onChange(getPointFromEvent(event));
       }}
-      aria-label="Campo de futebol horizontal"
+      aria-label="Horizontal football pitch"
     >
       <span className="absolute inset-y-[8%] left-[4%] w-[13%] border border-white/35" />
       <span className="absolute inset-y-[24%] left-[4%] w-[6%] border border-white/25" />
@@ -110,7 +110,7 @@ export function GoalTarget({ value, onChange, className, markers = [] }: Surface
         }
         onChange(getPointFromEvent(event));
       }}
-      aria-label="Baliza interativa"
+      aria-label="Interactive goal"
     >
       <span className="absolute inset-x-[8%] bottom-[14%] top-[14%] border-2 border-white/65" />
       <span className="absolute inset-x-[8%] bottom-[14%] top-[14%] bg-[linear-gradient(90deg,rgba(255,255,255,0.14)_1px,transparent_1px),linear-gradient(0deg,rgba(255,255,255,0.14)_1px,transparent_1px)] bg-[length:12.5%_100%,100%_25%]" />

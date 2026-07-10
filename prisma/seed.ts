@@ -3,50 +3,92 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 function requiresGoalLocation(code: string) {
-  return code.endsWith("_FINALIZACAO") || code.endsWith("_GOLO") || code.endsWith("_PENALTI");
+  return code.endsWith("_FINISHING") || code.endsWith("_GOAL") || code.endsWith("_PENALTY");
 }
 
 const momentTypes = [
-  { name: "Organização Ofensiva", code: "OO", color: "#22c55e", defaultShortcut: "1" },
-  { name: "Organização Defensiva", code: "OD", color: "#38bdf8", defaultShortcut: "2" },
-  { name: "Transição Ofensiva", code: "TO", color: "#f59e0b", defaultShortcut: "3" },
-  { name: "Transição Defensiva", code: "TD", color: "#ef4444", defaultShortcut: "4" },
-  { name: "Bola Parada Defensiva", code: "BPD", color: "#a78bfa", defaultShortcut: "5" },
-  { name: "Bola Parada Ofensiva", code: "BPO", color: "#ec4899", defaultShortcut: "6" },
+  { name: "Offensive Organization", code: "OO", color: "#22c55e", defaultShortcut: "1" },
+  { name: "Defensive Organization", code: "DO", color: "#38bdf8", defaultShortcut: "2" },
+  { name: "Offensive Transition", code: "OT", color: "#f59e0b", defaultShortcut: "3" },
+  { name: "Defensive Transition", code: "DT", color: "#ef4444", defaultShortcut: "4" },
+  { name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "5" },
+  { name: "Offensive Set Pieces", code: "OSP", color: "#ec4899", defaultShortcut: "6" },
 ];
 
+const legacyMomentTypeCodeMappings = [
+  { from: "OD", to: "DO" },
+  { from: "TO", to: "OT" },
+  { from: "TD", to: "DT" },
+  { from: "BPD", to: "DSP" },
+  { from: "BPO", to: "OSP" },
+  { from: "BP", to: "OSP" },
+] as const;
+
 const subMomentTypeDefinitions = [
-  { name: "Pontapé de Saída", code: "OO_PONTAPE_SAIDA", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Saída do GR", code: "OO_SAIDA_GR", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Construção", code: "OO_CONSTRUCAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Criação", code: "OO_CRIACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Corredor Direito", code: "OO_CORREDOR_DIREITO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Corredor Esquerdo", code: "OO_CORREDOR_ESQUERDO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Finalização", code: "OO_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Golo", code: "OO_GOLO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Saída do GR", code: "OD_SAIDA_GR", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Bloco Alto", code: "OD_BLOCO_ALTO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Bloco Médio", code: "OD_BLOCO_MEDIO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Bloco Baixo", code: "OD_BLOCO_BAIXO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Corredor Direito", code: "OD_CORREDOR_DIREITO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Corredor Esquerdo", code: "OD_CORREDOR_ESQUERDO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Finalização", code: "OD_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Golo", code: "OD_GOLO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Recuperação Meio Campo Defensivo", code: "TO_RECUPERACAO_MCD", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Recuperação Meio Campo Ofensivo", code: "TO_RECUPERACAO_MCO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Finalização", code: "TO_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Golo", code: "TO_GOLO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Recuperação Meio Campo Defensivo", code: "TD_RECUPERACAO_MCD", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Recuperação Meio Campo Ofensivo", code: "TD_RECUPERACAO_MCO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Finalização", code: "TD_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Golo", code: "TD_GOLO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Canto", code: "BP_CANTO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Lançamento", code: "BP_LANCAMENTO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Livre", code: "BP_LIVRE", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Penalti", code: "BP_PENALTI", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Finalização", code: "BP_FINALIZACAO", requiresFieldLocation: false, requiresGoalLocation: false },
-  { name: "Golo", code: "BP_GOLO", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Kickoff", code: "OO_KICKOFF", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goalkeeper Build-up", code: "OO_GOALKEEPER_BUILDUP", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Build-up", code: "OO_BUILDUP", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Chance Creation", code: "OO_CHANCE_CREATION", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Right Channel", code: "OO_RIGHT_CHANNEL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Left Channel", code: "OO_LEFT_CHANNEL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Finishing", code: "OO_FINISHING", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goal", code: "OO_GOAL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goalkeeper Build-up", code: "DO_GOALKEEPER_BUILDUP", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "High Block", code: "DO_HIGH_BLOCK", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Mid Block", code: "DO_MID_BLOCK", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Low Block", code: "DO_LOW_BLOCK", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Right Channel", code: "DO_RIGHT_CHANNEL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Left Channel", code: "DO_LEFT_CHANNEL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Finishing", code: "DO_FINISHING", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goal", code: "DO_GOAL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Defensive Half Recovery", code: "OT_DEFENSIVE_HALF_RECOVERY", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Attacking Half Recovery", code: "OT_ATTACKING_HALF_RECOVERY", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Finishing", code: "OT_FINISHING", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goal", code: "OT_GOAL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Defensive Half Recovery", code: "DT_DEFENSIVE_HALF_RECOVERY", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Attacking Half Recovery", code: "DT_ATTACKING_HALF_RECOVERY", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Finishing", code: "DT_FINISHING", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goal", code: "DT_GOAL", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Corner", code: "SP_CORNER", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Throw-in", code: "SP_THROW_IN", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Free Kick", code: "SP_FREE_KICK", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Penalty", code: "SP_PENALTY", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Finishing", code: "SP_FINISHING", requiresFieldLocation: false, requiresGoalLocation: false },
+  { name: "Goal", code: "SP_GOAL", requiresFieldLocation: false, requiresGoalLocation: false },
 ];
+
+const legacySubMomentTypeCodeMappings = [
+  { from: "OO_PONTAPE_SAIDA", to: "OO_KICKOFF" },
+  { from: "OO_SAIDA_GR", to: "OO_GOALKEEPER_BUILDUP" },
+  { from: "OO_CONSTRUCAO", to: "OO_BUILDUP" },
+  { from: "OO_CRIACAO", to: "OO_CHANCE_CREATION" },
+  { from: "OO_CORREDOR_DIREITO", to: "OO_RIGHT_CHANNEL" },
+  { from: "OO_CORREDOR_ESQUERDO", to: "OO_LEFT_CHANNEL" },
+  { from: "OO_FINALIZACAO", to: "OO_FINISHING" },
+  { from: "OO_GOLO", to: "OO_GOAL" },
+  { from: "OD_SAIDA_GR", to: "DO_GOALKEEPER_BUILDUP" },
+  { from: "OD_BLOCO_ALTO", to: "DO_HIGH_BLOCK" },
+  { from: "OD_BLOCO_MEDIO", to: "DO_MID_BLOCK" },
+  { from: "OD_BLOCO_BAIXO", to: "DO_LOW_BLOCK" },
+  { from: "OD_CORREDOR_DIREITO", to: "DO_RIGHT_CHANNEL" },
+  { from: "OD_CORREDOR_ESQUERDO", to: "DO_LEFT_CHANNEL" },
+  { from: "OD_FINALIZACAO", to: "DO_FINISHING" },
+  { from: "OD_GOLO", to: "DO_GOAL" },
+  { from: "TO_RECUPERACAO_MCD", to: "OT_DEFENSIVE_HALF_RECOVERY" },
+  { from: "TO_RECUPERACAO_MCO", to: "OT_ATTACKING_HALF_RECOVERY" },
+  { from: "TO_FINALIZACAO", to: "OT_FINISHING" },
+  { from: "TO_GOLO", to: "OT_GOAL" },
+  { from: "TD_RECUPERACAO_MCD", to: "DT_DEFENSIVE_HALF_RECOVERY" },
+  { from: "TD_RECUPERACAO_MCO", to: "DT_ATTACKING_HALF_RECOVERY" },
+  { from: "TD_FINALIZACAO", to: "DT_FINISHING" },
+  { from: "TD_GOLO", to: "DT_GOAL" },
+  { from: "BP_CANTO", to: "SP_CORNER" },
+  { from: "BP_LANCAMENTO", to: "SP_THROW_IN" },
+  { from: "BP_LIVRE", to: "SP_FREE_KICK" },
+  { from: "BP_PENALTI", to: "SP_PENALTY" },
+  { from: "BP_FINALIZACAO", to: "SP_FINISHING" },
+  { from: "BP_GOLO", to: "SP_GOAL" },
+] as const;
 
 const subMomentTypes = subMomentTypeDefinitions.map((type) => ({
   ...type,
@@ -64,8 +106,62 @@ const playerShortcuts = [
   { actionType: "editor.save", targetType: "editor", targetId: null, key: "S" },
 ];
 
+async function migrateLegacyMomentTypeCodes() {
+  for (const mapping of legacyMomentTypeCodeMappings) {
+    const [targetType, legacyTypes] = await Promise.all([
+      prisma.momentType.findUnique({ where: { code: mapping.to } }),
+      prisma.momentType.findMany({ where: { code: mapping.from } }),
+    ]);
+
+    for (const legacyType of legacyTypes) {
+      if (targetType && targetType.id !== legacyType.id) {
+        await prisma.moment.updateMany({
+          where: { momentTypeId: legacyType.id },
+          data: { momentTypeId: targetType.id },
+        });
+        await prisma.shortcutSetting.deleteMany({
+          where: { targetType: "momentType", targetId: legacyType.id },
+        });
+        await prisma.momentType.delete({ where: { id: legacyType.id } });
+        continue;
+      }
+
+      await prisma.momentType.update({
+        where: { id: legacyType.id },
+        data: { code: mapping.to },
+      });
+    }
+  }
+}
+
+async function migrateLegacySubMomentTypeCodes() {
+  for (const mapping of legacySubMomentTypeCodeMappings) {
+    const [targetType, legacyTypes] = await Promise.all([
+      prisma.subMomentType.findUnique({ where: { code: mapping.to } }),
+      prisma.subMomentType.findMany({ where: { code: mapping.from } }),
+    ]);
+
+    for (const legacyType of legacyTypes) {
+      if (targetType && targetType.id !== legacyType.id) {
+        await prisma.subMoment.updateMany({
+          where: { subMomentTypeId: legacyType.id },
+          data: { subMomentTypeId: targetType.id },
+        });
+        await prisma.subMomentType.delete({ where: { id: legacyType.id } });
+        continue;
+      }
+
+      await prisma.subMomentType.update({
+        where: { id: legacyType.id },
+        data: { code: mapping.to },
+      });
+    }
+  }
+}
+
 async function main() {
-  const savedMomentTypeIds: Record<string, string> = {};
+  await migrateLegacyMomentTypeCodes();
+  await migrateLegacySubMomentTypeCodes();
 
   for (const type of momentTypes) {
     const savedType = await prisma.momentType.upsert({
@@ -73,7 +169,6 @@ async function main() {
       update: type,
       create: type,
     });
-    savedMomentTypeIds[type.code] = savedType.id;
 
     await prisma.shortcutSetting.upsert({
       where: { id: `seed-moment-${type.code}` },
@@ -91,23 +186,6 @@ async function main() {
         key: type.defaultShortcut,
       },
     });
-  }
-
-  if (savedMomentTypeIds.BPO) {
-    const legacyTypes = await prisma.momentType.findMany({
-      where: { code: "BP" },
-    });
-
-    for (const legacyType of legacyTypes) {
-      await prisma.moment.updateMany({
-        where: { momentTypeId: legacyType.id },
-        data: { momentTypeId: savedMomentTypeIds.BPO },
-      });
-      await prisma.shortcutSetting.deleteMany({
-        where: { targetType: "momentType", targetId: legacyType.id },
-      });
-      await prisma.momentType.delete({ where: { id: legacyType.id } });
-    }
   }
 
   for (const type of subMomentTypes) {

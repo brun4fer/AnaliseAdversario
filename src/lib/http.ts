@@ -9,7 +9,7 @@ export async function apiFetch<T>(url: string, init?: RequestInit): Promise<T> {
 
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? "Erro ao comunicar com a aplicação.");
+    throw new Error(payload?.error ?? "Error communicating with the app.");
   }
 
   if (response.status === 204) {

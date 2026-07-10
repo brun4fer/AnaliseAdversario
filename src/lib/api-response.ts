@@ -13,8 +13,8 @@ export function noContent() {
 }
 
 export function handleRouteError(error: unknown) {
-  const message = error instanceof Error ? error.message : "Erro inesperado.";
-  const status = message.includes("não encontrado") ? 404 : 400;
+  const message = error instanceof Error ? error.message : "Unexpected error.";
+  const status = message.toLowerCase().includes("not found") ? 404 : 400;
   return NextResponse.json({ error: message }, { status });
 }
 

@@ -28,15 +28,15 @@ export async function exportMomentClip({
   onStatus,
 }: ExportMomentClipInput): Promise<ExportMomentClipResult> {
   if (typeof MediaRecorder === "undefined") {
-    throw new Error("Este browser não suporta exportação de vídeo.");
+    throw new Error("This browser does not support video export.");
   }
 
   const mimeType = getSupportedVideoMimeType();
   if (!mimeType) {
-    throw new Error("Este browser não suporta gravação WebM.");
+    throw new Error("This browser does not support WebM recording.");
   }
 
-  onStatus?.("A preparar vídeo...");
+  onStatus?.("Preparing video...");
 
   const sourceVideo = document.createElement("video");
   sourceVideo.preload = "auto";
@@ -52,7 +52,7 @@ export async function exportMomentClip({
 
     const mediaDuration = Number.isFinite(sourceVideo.duration) ? sourceVideo.duration : moment.endTimeSeconds;
     if (moment.startTimeSeconds >= mediaDuration) {
-      throw new Error("O excerto está fora da duração do vídeo selecionado.");
+      throw new Error("The clip is outside the selected video duration.");
     }
 
     const start = Math.max(0, Math.min(moment.startTimeSeconds, mediaDuration));
@@ -65,7 +65,7 @@ export async function exportMomentClip({
 
     const context = canvas.getContext("2d");
     if (!context) {
-      throw new Error("Não foi possível preparar o vídeo para exportação.");
+      throw new Error("Could not prepare the video for export.");
     }
 
     outputStream = canvas.captureStream(exportFrameRate);
@@ -82,11 +82,11 @@ export async function exportMomentClip({
           chunks.push(event.data);
         }
       };
-      recorder.onerror = () => reject(new Error("Não foi possível gravar o excerto."));
+      recorder.onerror = () => reject(new Error("Could not record the clip."));
       recorder.onstop = () => {
         const blob = new Blob(chunks, { type: recorder.mimeType || mimeType });
         if (blob.size === 0) {
-          reject(new Error("A exportação terminou sem dados de vídeo."));
+          reject(new Error("The export finished without video data."));
           return;
         }
         resolve(blob);
@@ -109,7 +109,7 @@ export async function exportMomentClip({
       const progressSecond = Math.floor(elapsed);
       if (progressSecond !== lastProgressSecond) {
         lastProgressSecond = progressSecond;
-        onStatus?.(`A exportar ${formatPreciseTime(elapsed)} / ${formatPreciseTime(clipDuration)}...`);
+        onStatus?.(`Exporting ${formatPreciseTime(elapsed)} / ${formatPreciseTime(clipDuration)}...`);
       }
 
       if (sourceVideo.ended || sourceVideo.currentTime >= end) {
@@ -249,11 +249,11 @@ function drawOverlay(
   const subMomentLines = buildSubMomentLines(moment.subMoments);
   const dataLines = [
     match.title,
-    `Adversário: ${match.opponentName}`,
-    match.competition ? `Competição: ${match.competition}` : null,
-    `Tempo: ${formatPreciseTime(start)} - ${formatPreciseTime(end)}`,
-    `Duração: ${formatPreciseTime(end - start)}`,
-    moment.notes ? `Notas: ${moment.notes}` : null,
+    `Opponent: ${match.opponentName}`,
+    match.competition ? `Competition: ${match.competition}` : null,
+    `Time: ${formatPreciseTime(start)} - ${formatPreciseTime(end)}`,
+    `Duration: ${formatPreciseTime(end - start)}`,
+    moment.notes ? `Notes: ${moment.notes}` : null,
   ].filter(Boolean) as string[];
 
   context.save();
@@ -297,7 +297,7 @@ function drawOverlay(
     y += 14;
     context.font = `700 ${smallSize}px system-ui, sans-serif`;
     context.fillStyle = "#bae6fd";
-    context.fillText("Submomentos", margin + padding, y);
+    context.fillText("Submoments", margin + padding, y);
     y += smallSize + 6;
     context.font = `500 ${smallSize}px system-ui, sans-serif`;
     context.fillStyle = "#dbeafe";
@@ -326,16 +326,16 @@ function buildSubMomentLines(subMoments: SubMomentRecord[]) {
       pieces.push(formatPreciseTime(subMoment.timeSeconds));
     }
     if (subMoment.fieldX !== null && subMoment.fieldY !== null) {
-      pieces.push(`campo ${formatPoint(subMoment.fieldX, subMoment.fieldY)}`);
+      pieces.push(`field ${formatPoint(subMoment.fieldX, subMoment.fieldY)}`);
     }
     if (subMoment.goalX !== null && subMoment.goalY !== null) {
-      pieces.push(`baliza ${formatPoint(subMoment.goalX, subMoment.goalY)}`);
+      pieces.push(`goal ${formatPoint(subMoment.goalX, subMoment.goalY)}`);
     }
     return pieces.join(" | ");
   });
 
   if (subMoments.length > 6) {
-    lines.push(`+${subMoments.length - 6} submomentos`);
+    lines.push(`+${subMoments.length - 6} submoments`);
   }
 
   return lines;
@@ -400,7 +400,7 @@ function waitForMediaEvent(element: HTMLMediaElement, eventName: keyof HTMLMedia
   return new Promise<void>((resolve, reject) => {
     const timeout = window.setTimeout(() => {
       cleanup();
-      reject(new Error("Tempo de espera esgotado ao ler o vídeo."));
+      reject(new Error("Timed out while reading the video."));
     }, 15_000);
 
     const cleanup = () => {
@@ -416,7 +416,7 @@ function waitForMediaEvent(element: HTMLMediaElement, eventName: keyof HTMLMedia
 
     const handleError = () => {
       cleanup();
-      reject(new Error("Não foi possível ler o vídeo selecionado."));
+      reject(new Error("Could not read the selected video."));
     };
 
     element.addEventListener(eventName, handleSuccess, { once: true });
@@ -434,7 +434,7 @@ function wait(milliseconds: number) {
 }
 
 function buildClipFileName(match: Pick<MatchDetail, "title">, moment: MomentRecord, extension: string) {
-  const title = sanitizeFileName(match.title) || "jogo";
+  const title = sanitizeFileName(match.title) || "match";
   const time = formatPreciseTime(moment.startTimeSeconds).replace(/[:.]/g, "-");
   return `${title}-${moment.momentType.code}-${time}.${extension}`;
 }

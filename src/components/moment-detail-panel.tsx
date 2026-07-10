@@ -175,7 +175,7 @@ export function MomentDetailPanel({
       x: subMoment.fieldX as number,
       y: subMoment.fieldY as number,
       label: subMoment.subMomentType.name,
-      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "No time",
       active: subMoment.id === highlightedSubMomentId,
     }));
 
@@ -186,7 +186,7 @@ export function MomentDetailPanel({
       x: subMoment.goalX as number,
       y: subMoment.goalY as number,
       label: subMoment.subMomentType.name,
-      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+      detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "No time",
       active: subMoment.id === highlightedSubMomentId,
     }));
 
@@ -202,21 +202,21 @@ export function MomentDetailPanel({
               {formatPreciseTime(moment.startTimeSeconds)} - {formatPreciseTime(moment.endTimeSeconds)}
             </span>
           </div>
-          <h2 className="mt-2 truncate text-lg font-semibold text-white">Detalhe do momento</h2>
+          <h2 className="mt-2 truncate text-lg font-semibold text-white">Moment details</h2>
           {exporting && exportStatus ? <p className="mt-2 text-sm text-cyan-100">{exportStatus}</p> : null}
         </div>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={() => void onExport(moment)} disabled={!canExport || exporting}>
             <Download size={16} />
-            {exporting ? "A exportar" : "Exportar excerto"}
+            {exporting ? "Exporting" : "Export clip"}
           </Button>
           <Button variant="secondary" onClick={() => void saveMoment()} disabled={saving}>
             <Save size={16} />
-            {saving ? "A guardar" : "Guardar"}
+            {saving ? "Saving" : "Save"}
           </Button>
           <Button variant="danger" onClick={() => void onDelete(moment.id)}>
             <Trash2 size={16} />
-            Apagar
+            Delete
           </Button>
         </div>
       </div>
@@ -225,33 +225,33 @@ export function MomentDetailPanel({
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-2">
-              <FieldLabel>Tipo</FieldLabel>
+              <FieldLabel>Type</FieldLabel>
               <Select value={momentTypeId} onChange={(event) => setMomentTypeId(event.target.value)}>
                 {momentTypes.map((type) => (
                   <option key={type.id} value={type.id}>
-                    {type.code} · {type.name}
+                    {type.code} - {type.name}
                   </option>
                 ))}
               </Select>
             </div>
             <div className="grid gap-2">
-              <FieldLabel>Duração</FieldLabel>
+              <FieldLabel>Duration</FieldLabel>
               <div className="flex h-10 items-center rounded-md border border-white/10 bg-black/20 px-3 text-sm text-slate-300">
                 {formatPreciseTime(Math.max(0, Number(end) - Number(start)))}
               </div>
             </div>
             <div className="grid gap-2">
-              <FieldLabel>Início</FieldLabel>
+              <FieldLabel>Start</FieldLabel>
               <TextInput type="number" step="0.1" min="0" value={start} onChange={(event) => setStart(event.target.value)} />
             </div>
             <div className="grid gap-2">
-              <FieldLabel>Fim</FieldLabel>
+              <FieldLabel>End</FieldLabel>
               <TextInput type="number" step="0.1" min="0" value={end} onChange={(event) => setEnd(event.target.value)} />
             </div>
           </div>
 
           <div className="grid gap-2">
-            <FieldLabel>Notas</FieldLabel>
+            <FieldLabel>Notes</FieldLabel>
             <TextArea value={notes} onChange={(event) => setNotes(event.target.value)} />
           </div>
         </div>
@@ -260,9 +260,9 @@ export function MomentDetailPanel({
           <div className="space-y-4">
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-3">
-                <FieldLabel>Campo</FieldLabel>
+                <FieldLabel>Field</FieldLabel>
                 <span className="text-xs text-slate-500">
-                  {fieldPoint ? `${fieldPoint.x}%, ${fieldPoint.y}%` : "Clique no campo"}
+                  {fieldPoint ? `${fieldPoint.x}%, ${fieldPoint.y}%` : "Click on the field"}
                 </span>
               </div>
               <TacticalField value={fieldPoint} markers={existingFieldMarkers} onChange={setFieldPoint} />
@@ -270,9 +270,9 @@ export function MomentDetailPanel({
 
             <div className="grid gap-2">
               <div className="flex items-center justify-between gap-3">
-                <FieldLabel>Baliza</FieldLabel>
+                <FieldLabel>Goal</FieldLabel>
                 <span className="text-xs text-slate-500">
-                  {goalPoint ? `${goalPoint.x}%, ${goalPoint.y}%` : "Clique na baliza"}
+                  {goalPoint ? `${goalPoint.x}%, ${goalPoint.y}%` : "Click on the goal"}
                 </span>
               </div>
               <GoalTarget value={goalPoint} markers={existingGoalMarkers} onChange={setGoalPoint} />
@@ -284,12 +284,12 @@ export function MomentDetailPanel({
               <div className="grid gap-3">
                 <div className="grid gap-2">
                   <div className="flex items-center justify-between gap-3">
-                    <FieldLabel>Registo rápido</FieldLabel>
+                    <FieldLabel>Quick logging</FieldLabel>
                     <span className="text-xs text-slate-500">{formatPreciseTime(currentTime)}</span>
                   </div>
                   {subMomentTypes.length === 0 ? (
                     <p className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-500">
-                      Sem submomentos configurados para este momento.
+                      No submoments configured for this moment.
                     </p>
                   ) : (
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -316,7 +316,7 @@ export function MomentDetailPanel({
                 </div>
 
                 <div className="grid gap-2">
-                  <FieldLabel>Submomento</FieldLabel>
+                  <FieldLabel>Submoment</FieldLabel>
                   <Select value={subMomentTypeId} onChange={(event) => setSubMomentTypeId(event.target.value)}>
                     {subMomentTypes.map((type) => (
                       <option key={type.id} value={type.id}>
@@ -327,7 +327,7 @@ export function MomentDetailPanel({
                 </div>
                 <div className="grid grid-cols-[1fr_auto] gap-2">
                   <div className="grid gap-2">
-                    <FieldLabel>Tempo opcional</FieldLabel>
+                    <FieldLabel>Optional time</FieldLabel>
                     <TextInput
                       type="number"
                       step="0.1"
@@ -339,12 +339,12 @@ export function MomentDetailPanel({
                   </div>
                   <div className="flex items-end">
                     <Button type="button" variant="secondary" onClick={() => setSubMomentTime(String(Math.round(currentTime * 10) / 10))}>
-                      Usar atual
+                      Use current
                     </Button>
                   </div>
                 </div>
                 <div className="grid gap-2">
-                  <FieldLabel>Nota</FieldLabel>
+                  <FieldLabel>Note</FieldLabel>
                   <TextArea value={subMomentNotes} onChange={(event) => setSubMomentNotes(event.target.value)} />
                 </div>
                 <Button
@@ -354,16 +354,16 @@ export function MomentDetailPanel({
                   onClick={() => void addSubMoment()}
                 >
                   <Crosshair size={16} />
-                  Adicionar submomento
+                  Add submoment
                 </Button>
               </div>
             </div>
 
             <div className="space-y-2">
-              <FieldLabel>Submomentos guardados</FieldLabel>
+              <FieldLabel>Saved submoments</FieldLabel>
               {moment.subMoments.length === 0 ? (
                 <p className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-500">
-                  Ainda não existem submomentos neste excerto.
+                  There are no submoments in this clip yet.
                 </p>
               ) : (
                 moment.subMoments.map((subMoment) => (
@@ -439,9 +439,9 @@ function SubMomentItem({
           type="button"
           size="icon"
           variant="ghost"
-          aria-label="Apagar submomento"
+          aria-label="Delete submoment"
           onClick={() => {
-            if (window.confirm("Apagar este submomento?")) {
+            if (window.confirm("Delete this submoment?")) {
               void onDelete(subMoment.id);
             }
           }}
@@ -461,9 +461,9 @@ function SubMomentDetails({ subMoment }: { subMoment: SubMomentRecord }) {
         {subMoment.timeSeconds !== null ? <span className="text-xs text-cyan-100">{formatPreciseTime(subMoment.timeSeconds)}</span> : null}
       </div>
       <dl className="mt-3 grid gap-2 text-sm">
-        <DetailRow label="Campo" value={formatPoint(subMoment.fieldX, subMoment.fieldY)} />
-        <DetailRow label="Baliza" value={formatPoint(subMoment.goalX, subMoment.goalY)} />
-        <DetailRow label="Nota" value={subMoment.notes ?? "Sem nota"} />
+        <DetailRow label="Field" value={formatPoint(subMoment.fieldX, subMoment.fieldY)} />
+        <DetailRow label="Goal" value={formatPoint(subMoment.goalX, subMoment.goalY)} />
+        <DetailRow label="Note" value={subMoment.notes ?? "No note"} />
       </dl>
     </div>
   );
@@ -479,5 +479,5 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 }
 
 function formatPoint(x: number | null, y: number | null) {
-  return x !== null && y !== null ? `${x}%, ${y}%` : "Sem marcação";
+  return x !== null && y !== null ? `${x}%, ${y}%` : "No marker";
 }

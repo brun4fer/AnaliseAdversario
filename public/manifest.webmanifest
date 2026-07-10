@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "AP - Video Analise - Adversario",
+  "name": "AP - Opponent Video Analysis",
   "short_name": "AP Video",
-  "description": "Aplicacao PWA para analise tatica de futebol com video local.",
+  "description": "PWA for tactical football analysis with local video.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

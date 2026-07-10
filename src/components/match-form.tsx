@@ -63,7 +63,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
 
       router.push(`/analysis/${saved.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Erro ao guardar jogo.");
+      setError(err instanceof Error ? err.message : "Error saving match.");
     } finally {
       setSaving(false);
     }
@@ -74,14 +74,14 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.24em] text-cyan-200/80">
-            {mode === "create" ? "Nova análise" : "Editar análise"}
+            {mode === "create" ? "New analysis" : "Edit analysis"}
           </p>
-          <h1 className="mt-2 text-2xl font-semibold text-white">{mode === "create" ? "Criar jogo" : "Editar jogo"}</h1>
+          <h1 className="mt-2 text-2xl font-semibold text-white">{mode === "create" ? "Create match" : "Edit match"}</h1>
         </div>
         <Link href="/">
           <Button variant="ghost">
             <ArrowLeft size={16} />
-            Voltar
+            Back
           </Button>
         </Link>
       </div>
@@ -94,32 +94,32 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
             {error ? <div className="rounded-md border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field name="title" label="Título" value={form.title} onChange={setForm} required />
-              <Field name="opponentName" label="Adversário" value={form.opponentName} onChange={setForm} required />
-              <Field name="competition" label="Competição" value={form.competition ?? ""} onChange={setForm} />
-              <Field name="matchDate" label="Data" value={form.matchDate ?? ""} onChange={setForm} type="date" />
-              <Field name="venue" label="Local" value={form.venue ?? ""} onChange={setForm} />
+              <Field name="title" label="Title" value={form.title} onChange={setForm} required />
+              <Field name="opponentName" label="Opponent" value={form.opponentName} onChange={setForm} required />
+              <Field name="competition" label="Competition" value={form.competition ?? ""} onChange={setForm} />
+              <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" />
+              <Field name="venue" label="Venue" value={form.venue ?? ""} onChange={setForm} />
             </div>
 
             <div className="grid gap-2">
-              <FieldLabel htmlFor="notes">Notas</FieldLabel>
+              <FieldLabel htmlFor="notes">Notes</FieldLabel>
               <TextArea
                 id="notes"
                 value={form.notes ?? ""}
                 onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
-                placeholder="Contexto do adversário, observações ou objetivos da análise"
+                placeholder="Opponent context, observations or analysis goals"
               />
             </div>
 
             <div className="flex justify-end gap-2">
               <Link href="/">
                 <Button type="button" variant="secondary">
-                  Cancelar
+                  Cancel
                 </Button>
               </Link>
               <Button type="submit" variant="primary" disabled={saving}>
                 <Save size={16} />
-                {saving ? "A guardar" : "Guardar e abrir análise"}
+                {saving ? "Saving" : "Save and open analysis"}
               </Button>
             </div>
           </form>

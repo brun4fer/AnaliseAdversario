@@ -11,7 +11,7 @@ export async function GET(_request: Request, context: Context) {
     const { matchId } = await context.params;
     const match = await getMatchDetail(matchId);
     if (!match) {
-      return Response.json({ error: "Jogo não encontrado." }, { status: 404 });
+      return Response.json({ error: "Match not found." }, { status: 404 });
     }
     return ok(match);
   } catch (error) {

@@ -70,7 +70,49 @@ const globalForStore = globalThis as unknown as {
   databaseDefaultsVersion?: string;
 };
 
-const databaseDefaultsVersion = "2026-07-bpd-bpo";
+const databaseDefaultsVersion = "2026-07-english-defaults";
+
+const legacyMomentTypeCodeMappings = [
+  { from: "OD", to: "DO" },
+  { from: "TO", to: "OT" },
+  { from: "TD", to: "DT" },
+  { from: "BPD", to: "DSP" },
+  { from: "BPO", to: "OSP" },
+  { from: "BP", to: "OSP" },
+] as const;
+
+const legacySubMomentTypeCodeMappings = [
+  { from: "OO_PONTAPE_SAIDA", to: "OO_KICKOFF" },
+  { from: "OO_SAIDA_GR", to: "OO_GOALKEEPER_BUILDUP" },
+  { from: "OO_CONSTRUCAO", to: "OO_BUILDUP" },
+  { from: "OO_CRIACAO", to: "OO_CHANCE_CREATION" },
+  { from: "OO_CORREDOR_DIREITO", to: "OO_RIGHT_CHANNEL" },
+  { from: "OO_CORREDOR_ESQUERDO", to: "OO_LEFT_CHANNEL" },
+  { from: "OO_FINALIZACAO", to: "OO_FINISHING" },
+  { from: "OO_GOLO", to: "OO_GOAL" },
+  { from: "OD_SAIDA_GR", to: "DO_GOALKEEPER_BUILDUP" },
+  { from: "OD_BLOCO_ALTO", to: "DO_HIGH_BLOCK" },
+  { from: "OD_BLOCO_MEDIO", to: "DO_MID_BLOCK" },
+  { from: "OD_BLOCO_BAIXO", to: "DO_LOW_BLOCK" },
+  { from: "OD_CORREDOR_DIREITO", to: "DO_RIGHT_CHANNEL" },
+  { from: "OD_CORREDOR_ESQUERDO", to: "DO_LEFT_CHANNEL" },
+  { from: "OD_FINALIZACAO", to: "DO_FINISHING" },
+  { from: "OD_GOLO", to: "DO_GOAL" },
+  { from: "TO_RECUPERACAO_MCD", to: "OT_DEFENSIVE_HALF_RECOVERY" },
+  { from: "TO_RECUPERACAO_MCO", to: "OT_ATTACKING_HALF_RECOVERY" },
+  { from: "TO_FINALIZACAO", to: "OT_FINISHING" },
+  { from: "TO_GOLO", to: "OT_GOAL" },
+  { from: "TD_RECUPERACAO_MCD", to: "DT_DEFENSIVE_HALF_RECOVERY" },
+  { from: "TD_RECUPERACAO_MCO", to: "DT_ATTACKING_HALF_RECOVERY" },
+  { from: "TD_FINALIZACAO", to: "DT_FINISHING" },
+  { from: "TD_GOLO", to: "DT_GOAL" },
+  { from: "BP_CANTO", to: "SP_CORNER" },
+  { from: "BP_LANCAMENTO", to: "SP_THROW_IN" },
+  { from: "BP_LIVRE", to: "SP_FREE_KICK" },
+  { from: "BP_PENALTI", to: "SP_PENALTY" },
+  { from: "BP_FINALIZACAO", to: "SP_FINISHING" },
+  { from: "BP_GOLO", to: "SP_GOAL" },
+] as const;
 
 function now() {
   return new Date().toISOString();
@@ -108,6 +150,9 @@ async function ensureDatabaseDefaults() {
     return;
   }
 
+  await migrateLegacyMomentTypeCodes();
+  await migrateLegacySubMomentTypeCodes();
+
   const savedMomentTypes: MomentTypeRecord[] = [];
 
   for (const type of defaultMomentTypes) {
@@ -128,8 +173,6 @@ async function ensureDatabaseDefaults() {
     });
     savedMomentTypes.push(mapMomentType(saved));
   }
-
-  await migrateLegacySetPieceMomentTypes(savedMomentTypes);
 
   for (const type of defaultSubMomentTypes) {
     await prisma.subMomentType.upsert({
@@ -309,25 +352,56 @@ function sortByDefaultOrder<T extends { code: string; createdAt: string; name: s
   });
 }
 
-async function migrateLegacySetPieceMomentTypes(targetTypes: MomentTypeRecord[]) {
-  const offensiveSetPieceType = targetTypes.find((type) => type.code === "BPO");
-  if (!offensiveSetPieceType) {
-    return;
+async function migrateLegacyMomentTypeCodes() {
+  for (const mapping of legacyMomentTypeCodeMappings) {
+    const [targetType, legacyTypes] = await Promise.all([
+      prisma.momentType.findUnique({ where: { code: mapping.to } }),
+      prisma.momentType.findMany({ where: { code: mapping.from } }),
+    ]);
+
+    for (const legacyType of legacyTypes) {
+      if (targetType && targetType.id !== legacyType.id) {
+        await prisma.moment.updateMany({
+          where: { momentTypeId: legacyType.id },
+          data: { momentTypeId: targetType.id },
+        });
+        await prisma.shortcutSetting.deleteMany({
+          where: { targetType: "momentType", targetId: legacyType.id },
+        });
+        await prisma.momentType.delete({ where: { id: legacyType.id } });
+        continue;
+      }
+
+      await prisma.momentType.update({
+        where: { id: legacyType.id },
+        data: { code: mapping.to },
+      });
+    }
   }
+}
 
-  const legacyTypes = await prisma.momentType.findMany({
-    where: { code: "BP" },
-  });
+async function migrateLegacySubMomentTypeCodes() {
+  for (const mapping of legacySubMomentTypeCodeMappings) {
+    const [targetType, legacyTypes] = await Promise.all([
+      prisma.subMomentType.findUnique({ where: { code: mapping.to } }),
+      prisma.subMomentType.findMany({ where: { code: mapping.from } }),
+    ]);
 
-  for (const legacyType of legacyTypes) {
-    await prisma.moment.updateMany({
-      where: { momentTypeId: legacyType.id },
-      data: { momentTypeId: offensiveSetPieceType.id },
-    });
-    await prisma.shortcutSetting.deleteMany({
-      where: { targetType: "momentType", targetId: legacyType.id },
-    });
-    await prisma.momentType.delete({ where: { id: legacyType.id } });
+    for (const legacyType of legacyTypes) {
+      if (targetType && targetType.id !== legacyType.id) {
+        await prisma.subMoment.updateMany({
+          where: { subMomentTypeId: legacyType.id },
+          data: { subMomentTypeId: targetType.id },
+        });
+        await prisma.subMomentType.delete({ where: { id: legacyType.id } });
+        continue;
+      }
+
+      await prisma.subMomentType.update({
+        where: { id: legacyType.id },
+        data: { code: mapping.to },
+      });
+    }
   }
 }
 
@@ -361,7 +435,7 @@ async function deleteUnusedLegacySubMomentTypes() {
 function hydrateMemorySubMoment(store: MemoryStore, subMoment: MemorySubMoment): SubMomentRecord {
   const subMomentType = store.subMomentTypes.find((type) => type.id === subMoment.subMomentTypeId);
   if (!subMomentType) {
-    throw new Error("Tipo de submomento não encontrado.");
+    throw new Error("Submoment type not found.");
   }
 
   return {
@@ -373,7 +447,7 @@ function hydrateMemorySubMoment(store: MemoryStore, subMoment: MemorySubMoment):
 function hydrateMemoryMoment(store: MemoryStore, moment: MemoryMoment): MomentRecord {
   const momentType = store.momentTypes.find((type) => type.id === moment.momentTypeId);
   if (!momentType) {
-    throw new Error("Tipo de momento não encontrado.");
+    throw new Error("Moment type not found.");
   }
 
   return {
@@ -494,7 +568,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
   const opponentName = input.opponentName.trim();
 
   if (!title || !opponentName) {
-    throw new Error("Título e adversário são obrigatórios.");
+    throw new Error("Title and opponent are required.");
   }
 
   if (shouldUseDatabase()) {
@@ -548,7 +622,7 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   const store = getMemoryStore();
   const match = store.matches.find((item) => item.id === matchId);
   if (!match) {
-    throw new Error("Jogo não encontrado.");
+    throw new Error("Match not found.");
   }
 
   if (input.title !== undefined) {
@@ -670,7 +744,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
   const store = getMemoryStore();
   const momentType = store.momentTypes.find((type) => type.id === input.momentTypeId);
   if (!momentType) {
-    throw new Error("Tipo de momento não encontrado.");
+    throw new Error("Moment type not found.");
   }
 
   const timestamp = now();
@@ -694,7 +768,7 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
   if (shouldUseDatabase()) {
     const current = await prisma.moment.findUnique({ where: { id: momentId } });
     if (!current) {
-      throw new Error("Momento não encontrado.");
+      throw new Error("Moment not found.");
     }
 
     const start = input.startTimeSeconds ?? current.startTimeSeconds;
@@ -720,7 +794,7 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
   const store = getMemoryStore();
   const moment = store.moments.find((item) => item.id === momentId);
   if (!moment) {
-    throw new Error("Momento não encontrado.");
+    throw new Error("Moment not found.");
   }
 
   if (input.videoId !== undefined) {
@@ -776,7 +850,7 @@ export async function createSubMoment(input: CreateSubMomentInput): Promise<SubM
   const store = getMemoryStore();
   const subMomentType = store.subMomentTypes.find((type) => type.id === input.subMomentTypeId);
   if (!subMomentType) {
-    throw new Error("Tipo de submomento não encontrado.");
+    throw new Error("Submoment type not found.");
   }
 
   const timestamp = now();
@@ -818,7 +892,7 @@ export async function updateSubMoment(subMomentId: string, input: UpdateSubMomen
   const store = getMemoryStore();
   const subMoment = store.subMoments.find((item) => item.id === subMomentId);
   if (!subMoment) {
-    throw new Error("Submomento não encontrado.");
+    throw new Error("Submoment not found.");
   }
 
   if (input.subMomentTypeId !== undefined) {
@@ -869,7 +943,7 @@ export async function updateShortcut(shortcutId: string, key: string): Promise<S
   const store = getMemoryStore();
   const shortcut = store.shortcuts.find((item) => item.id === shortcutId);
   if (!shortcut) {
-    throw new Error("Atalho não encontrado.");
+    throw new Error("Shortcut not found.");
   }
   shortcut.key = key;
   shortcut.updatedAt = now();
@@ -951,7 +1025,7 @@ export async function updateMomentType(
   const store = getMemoryStore();
   const type = store.momentTypes.find((item) => item.id === momentTypeId);
   if (!type) {
-    throw new Error("Tipo de momento não encontrado.");
+    throw new Error("Moment type not found.");
   }
   if (input.name !== undefined) {
     type.name = input.name.trim();
@@ -980,7 +1054,7 @@ export async function deleteMomentType(momentTypeId: string) {
   if (shouldUseDatabase()) {
     const count = await prisma.moment.count({ where: { momentTypeId } });
     if (count > 0) {
-      throw new Error("Não é possível apagar um tipo com momentos associados.");
+      throw new Error("Cannot delete a type with associated moments.");
     }
     await prisma.shortcutSetting.deleteMany({ where: { targetType: "momentType", targetId: momentTypeId } });
     await prisma.momentType.delete({ where: { id: momentTypeId } });
@@ -989,7 +1063,7 @@ export async function deleteMomentType(momentTypeId: string) {
 
   const store = getMemoryStore();
   if (store.moments.some((moment) => moment.momentTypeId === momentTypeId)) {
-    throw new Error("Não é possível apagar um tipo com momentos associados.");
+    throw new Error("Cannot delete a type with associated moments.");
   }
   store.momentTypes = store.momentTypes.filter((type) => type.id !== momentTypeId);
   store.shortcuts = store.shortcuts.filter((shortcut) => shortcut.targetId !== momentTypeId);
@@ -1047,7 +1121,7 @@ export async function updateSubMomentType(
   const store = getMemoryStore();
   const type = store.subMomentTypes.find((item) => item.id === subMomentTypeId);
   if (!type) {
-    throw new Error("Tipo de submomento não encontrado.");
+    throw new Error("Submoment type not found.");
   }
   if (input.name !== undefined) {
     type.name = input.name.trim();
@@ -1069,7 +1143,7 @@ export async function deleteSubMomentType(subMomentTypeId: string) {
   if (shouldUseDatabase()) {
     const count = await prisma.subMoment.count({ where: { subMomentTypeId } });
     if (count > 0) {
-      throw new Error("Não é possível apagar um tipo com submomentos associados.");
+      throw new Error("Cannot delete a type with associated submoments.");
     }
     await prisma.subMomentType.delete({ where: { id: subMomentTypeId } });
     return;
@@ -1077,7 +1151,7 @@ export async function deleteSubMomentType(subMomentTypeId: string) {
 
   const store = getMemoryStore();
   if (store.subMoments.some((subMoment) => subMoment.subMomentTypeId === subMomentTypeId)) {
-    throw new Error("Não é possível apagar um tipo com submomentos associados.");
+    throw new Error("Cannot delete a type with associated submoments.");
   }
   store.subMomentTypes = store.subMomentTypes.filter((type) => type.id !== subMomentTypeId);
 }

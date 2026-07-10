@@ -46,7 +46,7 @@ export function SettingsClient() {
           }
         : current,
     );
-    setNotice("Atalho guardado.");
+    setNotice("Shortcut saved.");
   }
 
   if (loading) {
@@ -54,16 +54,16 @@ export function SettingsClient() {
   }
 
   if (error || !settings) {
-    return <Panel className="border-red-400/30 p-5 text-red-100">{error ?? "Não foi possível abrir as definições."}</Panel>;
+    return <Panel className="border-red-400/30 p-5 text-red-100">{error ?? "Could not open settings."}</Panel>;
   }
 
   return (
     <div className="space-y-5">
       <header className="rounded-lg border border-white/10 bg-white/[0.045] p-5 shadow-panel">
-        <p className="text-xs font-medium uppercase tracking-[0.24em] text-cyan-200/80">Configuração</p>
-        <h1 className="mt-2 text-2xl font-semibold text-white">Definições da análise</h1>
+        <p className="text-xs font-medium uppercase tracking-[0.24em] text-cyan-200/80">Configuration</p>
+        <h1 className="mt-2 text-2xl font-semibold text-white">Analysis settings</h1>
         <p className="mt-2 max-w-2xl text-sm text-slate-400">
-          Ajuste atalhos, tipos principais e submomentos. Estes dados ficam preparados para crescer sem alterar o fluxo de vídeo local.
+          Adjust shortcuts, main types and submoments. These settings can grow without changing the local video workflow.
         </p>
       </header>
 
@@ -102,8 +102,8 @@ function ShortcutPanel({
 
   return (
     <Panel className="p-4">
-      <h2 className="font-semibold text-white">Atalhos</h2>
-      <p className="mt-1 text-sm text-slate-500">Clique num atalho e pressione a nova tecla.</p>
+      <h2 className="font-semibold text-white">Shortcuts</h2>
+      <p className="mt-1 text-sm text-slate-500">Click a shortcut and press the new key.</p>
       <div className="mt-4 space-y-2">
         {shortcutRows.map(({ shortcut, label }) => (
           <div key={shortcut.id} className="grid grid-cols-[1fr_auto] items-center gap-2 rounded-md border border-white/10 bg-white/[0.035] p-2">
@@ -143,7 +143,7 @@ function ShortcutCapture({
         }
       }}
     >
-      {capturing ? "Pressione..." : shortcut.key}
+      {capturing ? "Press..." : shortcut.key}
     </button>
   );
 }
@@ -173,7 +173,7 @@ function MomentTypesPanel({
       }),
     });
     await onRefresh();
-    onNotice("Tipo de momento guardado.");
+    onNotice("Moment type saved.");
   }
 
   async function createType() {
@@ -183,21 +183,21 @@ function MomentTypesPanel({
     });
     setNewType({ name: "", code: "", color: "#22d3ee", defaultShortcut: "" });
     await onRefresh();
-    onNotice("Tipo de momento criado.");
+    onNotice("Moment type created.");
   }
 
   async function deleteType(type: MomentTypeRecord) {
-    if (!window.confirm(`Apagar o tipo ${type.code}?`)) {
+    if (!window.confirm(`Delete type ${type.code}?`)) {
       return;
     }
     await apiFetch<void>(`/api/settings/moment-types/${type.id}`, { method: "DELETE" });
     await onRefresh();
-    onNotice("Tipo de momento apagado.");
+    onNotice("Moment type deleted.");
   }
 
   return (
     <Panel className="p-4">
-      <h2 className="font-semibold text-white">Momentos</h2>
+      <h2 className="font-semibold text-white">Moments</h2>
       <div className="mt-4 space-y-3">
         {drafts.map((type) => (
           <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.55fr_0.55fr_0.65fr_auto]">
@@ -206,10 +206,10 @@ function MomentTypesPanel({
             <TextInput type="color" value={type.color} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, color: event.target.value } : item)))} />
             <TextInput value={type.defaultShortcut} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, defaultShortcut: event.target.value.toUpperCase() } : item)))} />
             <div className="flex gap-2">
-              <Button size="icon" variant="secondary" aria-label="Guardar tipo" onClick={() => void saveType(type)}>
+              <Button size="icon" variant="secondary" aria-label="Save type" onClick={() => void saveType(type)}>
                 <Save size={15} />
               </Button>
-              <Button size="icon" variant="danger" aria-label="Apagar tipo" onClick={() => void deleteType(type)}>
+              <Button size="icon" variant="danger" aria-label="Delete type" onClick={() => void deleteType(type)}>
                 <Trash2 size={15} />
               </Button>
             </div>
@@ -218,15 +218,15 @@ function MomentTypesPanel({
       </div>
 
       <div className="mt-4 rounded-md border border-cyan-300/20 bg-cyan-300/[0.05] p-3">
-        <FieldLabel>Novo tipo</FieldLabel>
+        <FieldLabel>New type</FieldLabel>
         <div className="mt-2 grid gap-2 lg:grid-cols-[1.2fr_0.55fr_0.55fr_0.65fr_auto]">
-          <TextInput placeholder="Nome" value={newType.name} onChange={(event) => setNewType((current) => ({ ...current, name: event.target.value }))} />
-          <TextInput placeholder="Código" value={newType.code} onChange={(event) => setNewType((current) => ({ ...current, code: event.target.value }))} />
+          <TextInput placeholder="Name" value={newType.name} onChange={(event) => setNewType((current) => ({ ...current, name: event.target.value }))} />
+          <TextInput placeholder="Code" value={newType.code} onChange={(event) => setNewType((current) => ({ ...current, code: event.target.value }))} />
           <TextInput type="color" value={newType.color} onChange={(event) => setNewType((current) => ({ ...current, color: event.target.value }))} />
-          <TextInput placeholder="Atalho" value={newType.defaultShortcut} onChange={(event) => setNewType((current) => ({ ...current, defaultShortcut: event.target.value.toUpperCase() }))} />
+          <TextInput placeholder="Shortcut" value={newType.defaultShortcut} onChange={(event) => setNewType((current) => ({ ...current, defaultShortcut: event.target.value.toUpperCase() }))} />
           <Button variant="primary" onClick={() => void createType()} disabled={!newType.name || !newType.code || !newType.defaultShortcut}>
             <Plus size={15} />
-            Criar
+            Create
           </Button>
         </div>
       </div>
@@ -264,7 +264,7 @@ function SubMomentTypesPanel({
       }),
     });
     await onRefresh();
-    onNotice("Tipo de submomento guardado.");
+    onNotice("Submoment type saved.");
   }
 
   async function createType() {
@@ -274,41 +274,41 @@ function SubMomentTypesPanel({
     });
     setNewType({ name: "", code: "", requiresFieldLocation: true, requiresGoalLocation: false });
     await onRefresh();
-    onNotice("Tipo de submomento criado.");
+    onNotice("Submoment type created.");
   }
 
   async function deleteType(type: SubMomentTypeRecord) {
-    if (!window.confirm(`Apagar o submomento ${type.name}?`)) {
+    if (!window.confirm(`Delete submoment ${type.name}?`)) {
       return;
     }
     await apiFetch<void>(`/api/settings/submoment-types/${type.id}`, { method: "DELETE" });
     await onRefresh();
-    onNotice("Tipo de submomento apagado.");
+    onNotice("Submoment type deleted.");
   }
 
   return (
     <Panel className="p-4">
-      <h2 className="font-semibold text-white">Submomentos</h2>
+      <h2 className="font-semibold text-white">Submoments</h2>
       <div className="mt-4 space-y-3">
         {drafts.map((type) => (
           <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.7fr_auto_auto_auto]">
             <TextInput value={type.name} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, name: event.target.value } : item)))} />
             <TextInput value={type.code} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, code: event.target.value } : item)))} />
             <ToggleLabel
-              label="Campo"
+              label="Field"
               checked={type.requiresFieldLocation}
               onChange={(checked) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, requiresFieldLocation: checked } : item)))}
             />
             <ToggleLabel
-              label="Baliza"
+              label="Goal"
               checked={type.requiresGoalLocation}
               onChange={(checked) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, requiresGoalLocation: checked } : item)))}
             />
             <div className="flex gap-2">
-              <Button size="icon" variant="secondary" aria-label="Guardar submomento" onClick={() => void saveType(type)}>
+              <Button size="icon" variant="secondary" aria-label="Save submoment" onClick={() => void saveType(type)}>
                 <Save size={15} />
               </Button>
-              <Button size="icon" variant="danger" aria-label="Apagar submomento" onClick={() => void deleteType(type)}>
+              <Button size="icon" variant="danger" aria-label="Delete submoment" onClick={() => void deleteType(type)}>
                 <Trash2 size={15} />
               </Button>
             </div>
@@ -317,15 +317,15 @@ function SubMomentTypesPanel({
       </div>
 
       <div className="mt-4 rounded-md border border-cyan-300/20 bg-cyan-300/[0.05] p-3">
-        <FieldLabel>Novo submomento</FieldLabel>
+        <FieldLabel>New submoment</FieldLabel>
         <div className="mt-2 grid gap-2 lg:grid-cols-[1.2fr_0.7fr_auto_auto_auto]">
-          <TextInput placeholder="Nome" value={newType.name} onChange={(event) => setNewType((current) => ({ ...current, name: event.target.value }))} />
-          <TextInput placeholder="Código" value={newType.code} onChange={(event) => setNewType((current) => ({ ...current, code: event.target.value }))} />
-          <ToggleLabel label="Campo" checked={newType.requiresFieldLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresFieldLocation: checked }))} />
-          <ToggleLabel label="Baliza" checked={newType.requiresGoalLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresGoalLocation: checked }))} />
+          <TextInput placeholder="Name" value={newType.name} onChange={(event) => setNewType((current) => ({ ...current, name: event.target.value }))} />
+          <TextInput placeholder="Code" value={newType.code} onChange={(event) => setNewType((current) => ({ ...current, code: event.target.value }))} />
+          <ToggleLabel label="Field" checked={newType.requiresFieldLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresFieldLocation: checked }))} />
+          <ToggleLabel label="Goal" checked={newType.requiresGoalLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresGoalLocation: checked }))} />
           <Button variant="primary" onClick={() => void createType()} disabled={!newType.name || !newType.code}>
             <Plus size={15} />
-            Criar
+            Create
           </Button>
         </div>
       </div>
@@ -350,17 +350,17 @@ function ToggleLabel({ label, checked, onChange }: { label: string; checked: boo
 function getShortcutLabel(shortcut: ShortcutSettingRecord, momentTypes: MomentTypeRecord[]) {
   if (shortcut.actionType === "moment.toggle" && shortcut.targetId) {
     const type = momentTypes.find((item) => item.id === shortcut.targetId);
-    return type ? `${type.code} · ${type.name}` : "Momento";
+    return type ? `${type.code} - ${type.name}` : "Moment";
   }
 
   const labels: Record<string, string> = {
     "player.togglePlay": "Play/Pause",
-    "player.seekBack5": "Voltar 5 segundos",
-    "player.seekForward5": "Avançar 5 segundos",
-    "player.seekBack15": "Voltar 15 segundos",
-    "player.seekForward15": "Avançar 15 segundos",
-    "moment.cancelActive": "Cancelar marcação ativa",
-    "editor.save": "Guardar edição",
+    "player.seekBack5": "Back 5 seconds",
+    "player.seekForward5": "Forward 5 seconds",
+    "player.seekBack15": "Back 15 seconds",
+    "player.seekForward15": "Forward 15 seconds",
+    "moment.cancelActive": "Cancel active tag",
+    "editor.save": "Save edit",
   };
 
   return labels[shortcut.actionType] ?? shortcut.actionType;

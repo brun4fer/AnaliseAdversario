@@ -10,8 +10,8 @@ import { APP_NAME } from "@/lib/taxonomy";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
-  { href: "/matches/new", label: "Novo jogo", icon: Trophy },
-  { href: "/settings", label: "Definições", icon: Settings },
+  { href: "/matches/new", label: "New match", icon: Trophy },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -29,7 +29,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <span className="block truncate text-sm font-semibold text-cyan-100">
                 {APP_NAME}
               </span>
-              <span className="block truncate text-xs text-slate-400">Tática, vídeo local e momentos</span>
+              <span className="block truncate text-xs text-slate-400">Tactics, local video and moments</span>
             </span>
           </Link>
 
