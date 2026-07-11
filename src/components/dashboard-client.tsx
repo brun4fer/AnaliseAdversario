@@ -2,17 +2,29 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, Clapperboard, Pencil, Play, Plus, Trash2 } from "lucide-react";
+import { Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2 } from "lucide-react";
 
 import { apiFetch } from "@/lib/http";
 import type { MatchSummary } from "@/lib/domain";
 import { formatTime } from "@/lib/time";
-import { Badge, Button, Panel } from "@/components/ui";
+import { Badge, Button, Panel, TextInput } from "@/components/ui";
 
 export function DashboardClient() {
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
+
+  const filteredMatches = useMemo(() => {
+    const normalizedQuery = query.trim().toLocaleLowerCase();
+    if (!normalizedQuery) return matches;
+
+    return matches.filter((match) =>
+      [match.title, match.teamName, match.opponentName, match.competition]
+        .filter(Boolean)
+        .some((value) => value!.toLocaleLowerCase().includes(normalizedQuery)),
+    );
+  }, [matches, query]);
 
   const totals = useMemo(
     () => ({
@@ -72,6 +84,19 @@ export function DashboardClient() {
         <Panel className="border-red-400/30 p-4 text-sm text-red-100">{error}</Panel>
       ) : null}
 
+      {!loading && matches.length > 0 ? (
+        <div className="relative max-w-md">
+          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+          <TextInput
+            aria-label="Search matches"
+            className="pl-10"
+            placeholder="Search by team, opponent or title"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </div>
+      ) : null}
+
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {loading ? (
           Array.from({ length: 6 }).map((_, index) => (
@@ -93,14 +118,20 @@ export function DashboardClient() {
               </Link>
             </div>
           </Panel>
+        ) : filteredMatches.length === 0 ? (
+          <Panel className="md:col-span-2 xl:col-span-3 p-8 text-center text-sm text-slate-400">
+            No matches found for “{query}”.
+          </Panel>
         ) : (
-          matches.map((match) => (
+          filteredMatches.map((match) => (
             <Panel key={match.id} className="flex min-h-60 flex-col justify-between overflow-hidden">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold text-white">{match.title}</h2>
-                    <p className="mt-1 truncate text-sm text-slate-400">{match.opponentName}</p>
+                    <p className="mt-1 truncate text-sm text-slate-400">
+                      {match.teamName ? `${match.teamName} vs ${match.opponentName}` : match.opponentName}
+                    </p>
                   </div>
                   <Badge className="shrink-0 border-cyan-300/20 bg-cyan-300/10 text-cyan-100">
                     {match.momentCount} {match.momentCount === 1 ? "moment" : "moments"}

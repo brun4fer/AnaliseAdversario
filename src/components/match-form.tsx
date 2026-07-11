@@ -16,6 +16,7 @@ type MatchFormProps = {
 
 const emptyForm: CreateMatchInput = {
   title: "",
+  teamName: "",
   opponentName: "",
   matchDate: "",
   competition: "",
@@ -39,6 +40,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
       .then((match) =>
         setForm({
           title: match.title,
+          teamName: match.teamName ?? "",
           opponentName: match.opponentName,
           matchDate: match.matchDate?.slice(0, 10) ?? "",
           competition: match.competition ?? "",
@@ -95,6 +97,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <Field name="title" label="Title" value={form.title} onChange={setForm} required />
+              <Field name="teamName" label="Our team" value={form.teamName} onChange={setForm} required />
               <Field name="opponentName" label="Opponent" value={form.opponentName} onChange={setForm} required />
               <Field name="competition" label="Competition" value={form.competition ?? ""} onChange={setForm} />
               <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" />

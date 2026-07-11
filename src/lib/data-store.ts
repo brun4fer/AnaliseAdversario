@@ -221,6 +221,7 @@ function mapMatch(match: Match): MatchRecord {
   return {
     id: match.id,
     title: match.title,
+    teamName: match.teamName,
     opponentName: match.opponentName,
     matchDate: match.matchDate?.toISOString() ?? null,
     competition: match.competition,
@@ -565,10 +566,11 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
 
 export async function createMatch(input: CreateMatchInput): Promise<MatchRecord> {
   const title = input.title.trim();
+  const teamName = input.teamName.trim();
   const opponentName = input.opponentName.trim();
 
-  if (!title || !opponentName) {
-    throw new Error("Title and opponent are required.");
+  if (!title || !teamName || !opponentName) {
+    throw new Error("Title, our team and opponent are required.");
   }
 
   if (shouldUseDatabase()) {
@@ -576,6 +578,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     const match = await prisma.match.create({
       data: {
         title,
+        teamName,
         opponentName,
         matchDate: normalizeDateInput(input.matchDate),
         competition: normalizeOptionalText(input.competition),
@@ -591,6 +594,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
   const match: MatchRecord = {
     id: id(),
     title,
+    teamName,
     opponentName,
     matchDate: normalizeDateInput(input.matchDate)?.toISOString() ?? null,
     competition: normalizeOptionalText(input.competition),
@@ -609,6 +613,7 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
       where: { id: matchId },
       data: {
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
+        ...(input.teamName !== undefined ? { teamName: input.teamName.trim() } : {}),
         ...(input.opponentName !== undefined ? { opponentName: input.opponentName.trim() } : {}),
         ...(input.matchDate !== undefined ? { matchDate: normalizeDateInput(input.matchDate) } : {}),
         ...(input.competition !== undefined ? { competition: normalizeOptionalText(input.competition) } : {}),
@@ -627,6 +632,9 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
 
   if (input.title !== undefined) {
     match.title = input.title.trim();
+  }
+  if (input.teamName !== undefined) {
+    match.teamName = input.teamName.trim() || null;
   }
   if (input.opponentName !== undefined) {
     match.opponentName = input.opponentName.trim();

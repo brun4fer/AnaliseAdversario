@@ -5,6 +5,7 @@ export type StorageType = "local";
 export type MatchRecord = {
   id: Id;
   title: string;
+  teamName: string | null;
   opponentName: string;
   matchDate: string | null;
   competition: string | null;
@@ -98,6 +99,7 @@ export type MatchDetail = MatchSummary & {
 
 export type CreateMatchInput = {
   title: string;
+  teamName: string;
   opponentName: string;
   matchDate?: string | null;
   competition?: string | null;

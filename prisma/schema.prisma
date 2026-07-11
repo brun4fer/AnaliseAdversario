@@ -18,6 +18,7 @@ model User {
 model Match {
   id           String   @id @default(cuid())
   title        String
+  teamName     String?
   opponentName String
   matchDate    DateTime?
   competition  String?
