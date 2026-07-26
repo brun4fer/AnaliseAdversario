@@ -33,7 +33,7 @@ export async function exportMomentClip({
 
   const mimeType = getSupportedVideoMimeType();
   if (!mimeType) {
-    throw new Error("This browser does not support WebM recording.");
+    throw new Error("Este navegador não suporta exportação MP4/H.264. Utilize uma versão recente do Chrome ou Edge.");
   }
 
   onStatus?.("Preparing video...");
@@ -159,10 +159,10 @@ export function downloadBlob(blob: Blob, fileName: string) {
 
 function getSupportedVideoMimeType() {
   const candidates = [
-    "video/webm;codecs=vp9,opus",
-    "video/webm;codecs=vp8,opus",
-    "video/webm;codecs=h264,opus",
-    "video/webm",
+    "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+    "video/mp4;codecs=avc1,mp4a.40.2",
+    "video/mp4;codecs=h264,aac",
+    "video/mp4",
   ];
 
   return candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate)) ?? "";
@@ -217,7 +217,9 @@ function drawFrame(
 ) {
   context.clearRect(0, 0, width, height);
   context.drawImage(video, 0, 0, width, height);
-  drawOverlay(context, width, height, data);
+  // Keep the exported clip identical to the source video: no titles,
+  // analysis summary, progress bar or other visual overlays.
+  void data;
 }
 
 function drawOverlay(

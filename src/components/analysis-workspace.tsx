@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import JSZip from "jszip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   ChevronsLeft,
   ChevronsRight,
   Clock,
@@ -40,6 +42,7 @@ import type {
 import { apiFetch } from "@/lib/http";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
+import { downloadBlob, exportMomentClip } from "@/lib/video-export";
 
 type ActiveMoment = {
   id: string;
@@ -86,6 +89,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
   const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
+  const [exporting, setExporting] = useState<"clip" | "group" | null>(null);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -510,6 +515,73 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
   }
 
+  async function exportSelectedMoment() {
+    if (!selectedMoment || !match) {
+      return;
+    }
+    if (!player.sourceUrl) {
+      setNotice("Selecione primeiro o vídeo local.");
+      fileInputRef.current?.click();
+      return;
+    }
+
+    setExporting("clip");
+    player.pause();
+    try {
+      const exported = await exportMomentClip({
+        sourceUrl: player.sourceUrl,
+        match,
+        moment: selectedMoment,
+        onStatus: setExportStatus,
+      });
+      downloadBlob(exported.blob, exported.fileName);
+      setNotice(`Vídeo MP4 exportado: ${exported.fileName}`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Não foi possível exportar o vídeo.");
+    } finally {
+      setExporting(null);
+      setExportStatus(null);
+    }
+  }
+
+  async function exportMomentType() {
+    if (!selectedMoment || !match) {
+      return;
+    }
+    if (!player.sourceUrl) {
+      setNotice("Selecione primeiro o vídeo local.");
+      fileInputRef.current?.click();
+      return;
+    }
+
+    const moments = match.moments.filter((moment) => moment.momentTypeId === selectedMoment.momentTypeId);
+    setExporting("group");
+    player.pause();
+    try {
+      const zip = new JSZip();
+      for (let index = 0; index < moments.length; index += 1) {
+        const moment = moments[index];
+        setExportStatus(`A exportar ${index + 1} de ${moments.length}: ${moment.momentType.name}`);
+        const exported = await exportMomentClip({ sourceUrl: player.sourceUrl, match, moment });
+        zip.file(exported.fileName, exported.blob);
+      }
+      setExportStatus("A preparar o ficheiro ZIP…");
+      const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const safeType = selectedMoment.momentType.name
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^\w.-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "momento";
+      downloadBlob(blob, `${safeType}-${moments.length}-videos.zip`);
+      setNotice(`${moments.length} vídeos MP4 exportados.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Não foi possível exportar os vídeos.");
+    } finally {
+      setExporting(null);
+      setExportStatus(null);
+    }
+  }
+
   if (loading) {
     return <div className="h-[70vh] animate-pulse rounded-lg border border-white/10 bg-white/[0.04]" />;
   }
@@ -559,6 +631,41 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           <div className="border-b border-white/10 px-3 py-3">
             <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Momentos marcados</p>
             <p className="mt-1 text-xs text-slate-400">{match.moments.length} no vídeo</p>
+            {selectedMoment ? (
+              <div className="mt-3 border-t border-white/10 pt-3">
+                <p className="truncate text-[11px] font-medium text-cyan-100" title={selectedMoment.momentType.name}>
+                  {selectedMoment.momentType.name}
+                </p>
+                <p className="mt-1 font-mono text-[10px] text-slate-500">
+                  {formatPreciseTime(selectedMoment.startTimeSeconds)} – {formatPreciseTime(selectedMoment.endTimeSeconds)}
+                </p>
+                <div className="mt-2 grid gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    className="w-full"
+                    disabled={Boolean(exporting) || !player.sourceUrl}
+                    onClick={() => void exportSelectedMoment()}
+                  >
+                    <Download size={14} />
+                    Exportar clip MP4
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full px-2"
+                    disabled={Boolean(exporting) || !player.sourceUrl}
+                    onClick={() => void exportMomentType()}
+                  >
+                    <Archive size={14} />
+                    Todos deste tipo ({match.moments.filter((moment) => moment.momentTypeId === selectedMoment.momentTypeId).length})
+                  </Button>
+                </div>
+                {exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
+              </div>
+            ) : (
+              <p className="mt-2 text-[10px] leading-4 text-slate-500">Selecione uma linha para rever ou exportar.</p>
+            )}
           </div>
           <div className="max-h-[calc(100vh-16rem)] min-h-0 flex-1 overflow-y-auto">
             {match.moments.length === 0 ? (
