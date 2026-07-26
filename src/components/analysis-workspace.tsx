@@ -10,23 +10,19 @@ import {
   Crosshair,
   Download,
   FileVideo,
-  Filter,
   Goal,
   Pause,
   Play,
-  Plus,
   RotateCcw,
   Scissors,
   Settings,
-  Square,
   Trash2,
   Upload,
   X,
 } from "lucide-react";
 
-import { MomentDetailPanel } from "@/components/moment-detail-panel";
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
-import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
+import { Badge, Button, FieldLabel, Panel, TextInput } from "@/components/ui";
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { cn } from "@/lib/cn";
@@ -38,14 +34,12 @@ import type {
   SettingsPayload,
   SubMomentRecord,
   SubMomentTypeRecord,
-  UpdateMomentInput,
   VideoMetadataInput,
   VideoRecord,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
-import { downloadBlob, exportMomentClip } from "@/lib/video-export";
 
 type ActiveMoment = {
   id: string;
@@ -82,19 +76,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [filter, setFilter] = useState("all");
   const [activeMoments, setActiveMoments] = useState<ActiveMoment[]>([]);
   const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
+  const [selectedSubMomentId, setSelectedSubMomentId] = useState<string | null>(null);
   const [videoWarning, setVideoWarning] = useState<VideoWarning | null>(null);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
-  const [saveSignal, setSaveSignal] = useState(0);
   const [pendingSubMoment, setPendingSubMoment] = useState<PendingSubMoment | null>(null);
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
   const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
-  const [exportingMomentId, setExportingMomentId] = useState<string | null>(null);
-  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -164,15 +155,35 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     [pendingMoment?.subMoments],
   );
 
-  const filteredMoments = useMemo(() => {
-    const moments = match?.moments ?? [];
-    if (filter === "all") {
-      return moments;
-    }
-    return moments.filter((moment) => moment.momentTypeId === filter);
-  }, [filter, match?.moments]);
+  const selectedFieldMarkers = useMemo(
+    () =>
+      (selectedMoment?.subMoments ?? [])
+        .filter((subMoment) => subMoment.fieldX !== null && subMoment.fieldY !== null)
+        .map((subMoment) => ({
+          id: `selected-field-${subMoment.id}`,
+          x: subMoment.fieldX as number,
+          y: subMoment.fieldY as number,
+          label: subMoment.subMomentType.name,
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+          active: subMoment.id === selectedSubMomentId,
+        })),
+    [selectedMoment?.subMoments, selectedSubMomentId],
+  );
 
-  const latestMoments = useMemo(() => [...(match?.moments ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 4), [match?.moments]);
+  const selectedGoalMarkers = useMemo(
+    () =>
+      (selectedMoment?.subMoments ?? [])
+        .filter((subMoment) => subMoment.goalX !== null && subMoment.goalY !== null)
+        .map((subMoment) => ({
+          id: `selected-goal-${subMoment.id}`,
+          x: subMoment.goalX as number,
+          y: subMoment.goalY as number,
+          label: subMoment.subMomentType.name,
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+          active: subMoment.id === selectedSubMomentId,
+        })),
+    [selectedMoment?.subMoments, selectedSubMomentId],
+  );
 
   const getShortcutForMomentType = useCallback(
     (momentTypeId: string) =>
@@ -295,6 +306,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         ),
       };
     });
+    setSelectedSubMomentId(saved.id);
     setNotice("Submoment saved.");
   }, []);
 
@@ -400,7 +412,6 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           "player.seekBack15": () => player.seekBy(-15),
           "player.seekForward15": () => player.seekBy(15),
           "moment.cancelActive": cancelLastActiveMoment,
-          "editor.save": () => setSaveSignal((current) => current + 1),
         };
 
         const handler = handlers[shortcut.actionType];
@@ -486,93 +497,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
   }
 
-  async function handleManualMoment() {
-    const momentType = filter !== "all" ? momentTypes.find((type) => type.id === filter) : momentTypes[0];
-    if (!momentType) {
-      return;
-    }
-
-    const start = roundSeconds(player.videoRef.current?.currentTime ?? player.currentTime);
-    await createMoment(momentType, start, start + 10);
-  }
-
-  async function handleUpdateMoment(momentId: string, input: UpdateMomentInput) {
-    const saved = await apiFetch<MomentRecord>(`/api/moments/${momentId}`, {
-      method: "PATCH",
-      body: JSON.stringify(input),
-    });
-    upsertMomentInState(saved);
-    setNotice("Moment saved.");
-  }
-
-  async function handleDeleteMoment(momentId: string) {
-    if (!window.confirm("Delete this moment and all associated submoments?")) {
-      return;
-    }
-
-    await apiFetch<void>(`/api/moments/${momentId}`, { method: "DELETE" });
-    setMatch((current) => {
-      if (!current) {
-        return current;
-      }
-      const moments = current.moments.filter((moment) => moment.id !== momentId);
-      return { ...current, moments, momentCount: moments.length };
-    });
-    setSelectedMomentId(null);
-    setNotice("Moment deleted.");
-  }
-
-  async function handleDeleteSubMoment(subMomentId: string) {
-    await apiFetch<void>(`/api/submoments/${subMomentId}`, { method: "DELETE" });
-    setMatch((current) => {
-      if (!current) {
-        return current;
-      }
-      return {
-        ...current,
-        moments: current.moments.map((moment) => ({
-          ...moment,
-          subMoments: moment.subMoments.filter((subMoment) => subMoment.id !== subMomentId),
-        })),
-      };
-    });
-    setNotice("Submoment deleted.");
-  }
-
   function reviewMoment(moment: MomentRecord) {
     setSelectedMomentId(moment.id);
+    setSelectedSubMomentId(null);
     player.reviewSegment(moment.startTimeSeconds, moment.endTimeSeconds);
   }
 
-  async function handleExportMoment(moment: MomentRecord) {
-    if (!match) {
-      return;
-    }
-
-    if (!player.sourceUrl) {
-      setNotice("Select the local match video first.");
-      fileInputRef.current?.click();
-      return;
-    }
-
-    setExportingMomentId(moment.id);
-    setExportStatus("Preparing export...");
-    player.pause();
-
-    try {
-      const exported = await exportMomentClip({
-        sourceUrl: player.sourceUrl,
-        match,
-        moment,
-        onStatus: setExportStatus,
-      });
-      downloadBlob(exported.blob, exported.fileName);
-      setNotice(`Clip exported: ${exported.fileName}`);
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Could not export the clip.");
-    } finally {
-      setExportingMomentId(null);
-      setExportStatus(null);
+  function reviewSubMoment(subMoment: SubMomentRecord) {
+    setSelectedSubMomentId(subMoment.id);
+    if (subMoment.timeSeconds !== null) {
+      player.seekTo(subMoment.timeSeconds);
     }
   }
 
@@ -620,15 +554,37 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </div>
       </header>
 
-      <MomentToolbar
-        momentTypes={momentTypes}
-        activeMoments={activeMoments}
-        getShortcut={getShortcutForMomentType}
-        onToggle={toggleMoment}
-      />
+      <div className="grid min-h-[42rem] gap-4 xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
+        <Panel className="flex min-h-0 flex-col overflow-hidden">
+          <div className="border-b border-white/10 px-3 py-3">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Momentos marcados</p>
+            <p className="mt-1 text-xs text-slate-400">{match.moments.length} no vídeo</p>
+          </div>
+          <div className="max-h-[calc(100vh-16rem)] min-h-0 flex-1 overflow-y-auto">
+            {match.moments.length === 0 ? (
+              <p className="p-3 text-xs leading-5 text-slate-500">Os momentos terminados aparecem aqui.</p>
+            ) : (
+              match.moments.map((moment) => (
+                <button
+                  key={moment.id}
+                  type="button"
+                  className={cn(
+                    "flex h-8 w-full items-center gap-2 border-b border-white/[0.06] px-3 text-left transition hover:bg-white/[0.06]",
+                    selectedMomentId === moment.id && "bg-cyan-300/10 text-cyan-100",
+                  )}
+                  onClick={() => reviewMoment(moment)}
+                  title={`${moment.momentType.name} · ${formatPreciseTime(moment.startTimeSeconds)}`}
+                >
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: moment.momentType.color }} />
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
+                </button>
+              ))
+            )}
+          </div>
+        </Panel>
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_27rem]">
-        <div className="space-y-4">
+        <div className="min-w-0">
           <Panel className="overflow-hidden">
             <div className="relative aspect-video bg-black">
               {player.sourceUrl ? (
@@ -689,163 +645,164 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               {player.error ? <p className="mt-3 rounded-md border border-red-400/30 bg-red-500/10 p-2 text-sm text-red-100">{player.error}</p> : null}
             </div>
           </Panel>
-
-          <Timeline moments={match.moments} duration={player.duration} onSelect={reviewMoment} />
-
-          {selectedMoment ? (
-            <MomentDetailPanel
-              moment={selectedMoment}
-              momentTypes={momentTypes}
-              subMomentTypes={selectedSubMomentTypes}
-              currentTime={player.currentTime}
-              saveSignal={saveSignal}
-              canExport={Boolean(player.sourceUrl)}
-              exporting={exportingMomentId === selectedMoment.id}
-              exportStatus={exportingMomentId === selectedMoment.id ? exportStatus : null}
-              getSubMomentShortcut={getShortcutForSubMomentType}
-              onSave={handleUpdateMoment}
-              onExport={handleExportMoment}
-              onDelete={handleDeleteMoment}
-              onAddSubMoment={handleAddSubMoment}
-              onQuickAddSubMoment={handleQuickAddSubMoment}
-              onDeleteSubMoment={handleDeleteSubMoment}
-            />
-          ) : null}
         </div>
 
-        <aside className="space-y-4">
-          <Panel className="p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Actions</p>
-                <h2 className="mt-1 font-semibold text-white">Quick tagging</h2>
-              </div>
-              <Button variant="primary" size="sm" onClick={() => void handleManualMoment()}>
-                <Plus size={15} />
-                Create new tag
-              </Button>
-            </div>
-
-            <div className="mt-4 space-y-2">
-              <FieldLabel>Active moments</FieldLabel>
-              {activeMoments.length === 0 ? (
-                <p className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-500">
-                  No active tags.
-                </p>
-              ) : (
-                activeMoments.map((active) => {
-                  const type = momentTypes.find((momentType) => momentType.id === active.momentTypeId);
-                  if (!type) {
-                    return null;
-                  }
-                  return (
-                    <div key={active.id} className="flex items-center justify-between gap-2 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-2">
-                      <div className="min-w-0">
-                        <Badge style={{ borderColor: `${type.color}66`, color: type.color }}>{type.code}</Badge>
-                        <p className="mt-1 text-xs text-slate-300">Start {formatPreciseTime(active.startTimeSeconds)}</p>
-                      </div>
-                      <div className="flex gap-1">
-                        <Button size="icon" variant="primary" aria-label={`Close ${type.code}`} onClick={() => toggleMoment(type)}>
-                          <Square size={14} />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          aria-label={`Cancel ${type.code}`}
-                          onClick={() => setActiveMoments((current) => current.filter((item) => item.id !== active.id))}
-                        >
-                          <X size={14} />
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </Panel>
-
+        <aside className="min-w-0">
           <Panel className="overflow-hidden">
-            <div className="border-b border-white/10 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Side panel</p>
-                  <h2 className="mt-1 font-semibold text-white">Saved moments</h2>
-                </div>
-                <Filter size={17} className="text-cyan-200" />
-              </div>
-              <div className="mt-3">
-                <Select value={filter} onChange={(event) => setFilter(event.target.value)}>
-                  <option value="all">All types</option>
-                  {momentTypes.map((type) => (
-                    <option key={type.id} value={type.id}>
-                      {type.code} - {type.name}
-                    </option>
-                  ))}
-                </Select>
+            <div className="border-b border-white/10 p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Momentos principais</p>
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {momentTypes.map((type) => {
+                  const active = activeMoments.some((moment) => moment.momentTypeId === type.id);
+                  return (
+                    <button
+                      key={type.id}
+                      type="button"
+                      className={cn(
+                        "flex min-h-14 items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition hover:bg-white/[0.08]",
+                        active ? "border-cyan-200/70 bg-cyan-300/10 shadow-glow" : "border-white/10 bg-white/[0.04]",
+                      )}
+                      onClick={() => toggleMoment(type)}
+                    >
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-semibold" style={{ color: type.color }}>{type.name}</span>
+                        {active ? <span className="mt-1 block text-[10px] text-cyan-100">A decorrer</span> : null}
+                      </span>
+                      <span className="shrink-0 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-400">
+                        {getShortcutForMomentType(type.id)}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="max-h-[34rem] overflow-y-auto p-3">
-              {filteredMoments.length === 0 ? (
-                <p className="rounded-md border border-white/10 bg-white/[0.03] p-3 text-sm text-slate-500">
-                  No moments match the selected filter.
+            <div className="p-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Submomentos</p>
+                {selectedMoment ? <span className="truncate text-[11px] text-cyan-100">{selectedMoment.momentType.name}</span> : null}
+              </div>
+              {!selectedMoment ? (
+                <p className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-slate-500">
+                  Termine ou selecione um momento à esquerda para identificar os submomentos.
                 </p>
+              ) : selectedSubMomentTypes.length === 0 ? (
+                <p className="mt-3 text-xs text-slate-500">Não existem submomentos configurados para este momento.</p>
               ) : (
-                <div className="space-y-2">
-                  {filteredMoments.map((moment) => (
-                    <MomentListItem
-                      key={moment.id}
-                      moment={moment}
-                      active={selectedMomentId === moment.id}
-                      canExport={Boolean(player.sourceUrl)}
-                      exporting={exportingMomentId === moment.id}
-                      onReview={reviewMoment}
-                      onExport={handleExportMoment}
-                      onDelete={handleDeleteMoment}
-                    />
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  {selectedSubMomentTypes.map((type) => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      className={cn(
+                        "flex min-h-10 items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-2 text-left text-xs text-slate-200 transition hover:bg-white/[0.09]",
+                        pendingSubMoment?.subMomentType.id === type.id && "border-cyan-300/60 bg-cyan-300/10 text-cyan-100",
+                      )}
+                      onClick={() => void handleQuickAddSubMoment(type)}
+                    >
+                      <span className="min-w-0 truncate">{type.name}</span>
+                      <span className="shrink-0 text-[10px] text-slate-500">{getShortcutForSubMomentType(type.id)}</span>
+                    </button>
                   ))}
                 </div>
               )}
-            </div>
-          </Panel>
 
-          <Panel className="p-4">
-            <FieldLabel>Latest tags</FieldLabel>
-            <div className="mt-3 space-y-2">
-              {latestMoments.length === 0 ? (
-                <p className="text-sm text-slate-500">There are no closed tags yet.</p>
-              ) : (
-                latestMoments.map((moment) => (
-                  <button
-                    key={moment.id}
-                    type="button"
-                    className="flex w-full items-center justify-between gap-2 rounded-md border border-white/10 bg-white/[0.035] p-2 text-left text-sm hover:bg-white/[0.07]"
-                    onClick={() => reviewMoment(moment)}
-                  >
-                    <span className="min-w-0 truncate text-slate-200">{moment.momentType.name}</span>
-                    <span className="shrink-0 text-xs text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
-                  </button>
-                ))
-              )}
+              {selectedMoment ? (
+                <div className="mt-4 border-t border-white/10 pt-4">
+                  <div className="flex items-center justify-between gap-2">
+                    <FieldLabel>Submomentos registados</FieldLabel>
+                    <span className="text-[11px] text-slate-500">{selectedMoment.subMoments.length}</span>
+                  </div>
+                  {selectedMoment.subMoments.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">Ainda não existem submomentos neste momento.</p>
+                  ) : (
+                    <div className="mt-2 max-h-36 overflow-y-auto rounded-md border border-white/10">
+                      {selectedMoment.subMoments.map((subMoment) => (
+                        <button
+                          key={subMoment.id}
+                          type="button"
+                          className={cn(
+                            "flex h-8 w-full items-center gap-2 border-b border-white/[0.06] px-2.5 text-left transition last:border-b-0 hover:bg-white/[0.06]",
+                            selectedSubMomentId === subMoment.id && "bg-cyan-300/10 text-cyan-100",
+                          )}
+                          onClick={() => reviewSubMoment(subMoment)}
+                          title="Ir para este submomento e destacar a sua localização"
+                        >
+                          <Crosshair size={12} className="shrink-0 text-cyan-200" />
+                          <span className="min-w-0 flex-1 truncate text-xs">{subMoment.subMomentType.name}</span>
+                          <span className="shrink-0 font-mono text-[10px] text-slate-500">
+                            {subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "—"}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {pendingSubMoment ? (
+                <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <FieldLabel>Campo</FieldLabel>
+                      <span className="text-[11px] text-slate-500">Marque a zona</span>
+                    </div>
+                    <TacticalField value={pendingFieldPoint} markers={pendingFieldMarkers} onChange={setPendingFieldPoint} />
+                  </div>
+                  {requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType) ? (
+                    <div>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <FieldLabel>Baliza</FieldLabel>
+                        <span className="text-[11px] text-slate-500">Marque o destino</span>
+                      </div>
+                      <GoalTarget value={pendingGoalPoint} markers={pendingGoalMarkers} onChange={setPendingGoalPoint} />
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button size="sm" variant="ghost" onClick={cancelPendingSubMoment}>Cancelar</Button>
+                    <Button
+                      size="sm"
+                      variant="primary"
+                      disabled={!pendingFieldPoint || (requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType) && !pendingGoalPoint) || savingPendingSubMoment}
+                      onClick={() => void confirmPendingSubMoment()}
+                    >
+                      {savingPendingSubMoment ? "A guardar…" : "Guardar"}
+                    </Button>
+                  </div>
+                </div>
+              ) : selectedMoment ? (
+                <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <FieldLabel>Campo</FieldLabel>
+                      <span className="text-[11px] text-slate-500">{selectedFieldMarkers.length} pontos</span>
+                    </div>
+                    <TacticalField
+                      value={null}
+                      markers={selectedFieldMarkers}
+                      onChange={() => setNotice("Selecione primeiro um submomento para adicionar uma localização.")}
+                    />
+                  </div>
+                  <div>
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <FieldLabel>Baliza</FieldLabel>
+                      <span className="text-[11px] text-slate-500">{selectedGoalMarkers.length} pontos</span>
+                    </div>
+                    <GoalTarget
+                      value={null}
+                      markers={selectedGoalMarkers}
+                      onChange={() => setNotice("Selecione um submomento de finalização para marcar a baliza.")}
+                    />
+                  </div>
+                  <p className="text-[11px] leading-4 text-slate-500">
+                    Selecione um submomento na lista para ir ao instante e destacar os respetivos pontos.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </Panel>
         </aside>
       </div>
-
-      {pendingSubMoment ? (
-        <SubMomentLocationDialog
-          pendingSubMoment={pendingSubMoment}
-          fieldPoint={pendingFieldPoint}
-          goalPoint={pendingGoalPoint}
-          fieldMarkers={pendingFieldMarkers}
-          goalMarkers={pendingGoalMarkers}
-          saving={savingPendingSubMoment}
-          onFieldPointChange={setPendingFieldPoint}
-          onGoalPointChange={setPendingGoalPoint}
-          onCancel={cancelPendingSubMoment}
-          onSave={() => void confirmPendingSubMoment()}
-        />
-      ) : null}
 
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">
