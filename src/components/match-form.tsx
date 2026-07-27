@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 
-import type { CreateMatchInput, MatchDetail, MatchRecord } from "@/lib/domain";
+import type { CreateMatchInput, MaintenanceRecord, MatchDetail, MatchRecord } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
-import { Button, FieldLabel, Panel, TextArea, TextInput } from "@/components/ui";
+import { Button, FieldLabel, Panel, Select, TextArea, TextInput } from "@/components/ui";
 
 type MatchFormProps = {
   mode: "create" | "edit";
@@ -22,6 +22,11 @@ const emptyForm: CreateMatchInput = {
   competition: "",
   venue: "",
   notes: "",
+  roundName: "",
+  seasonId: "",
+  homeClubId: "",
+  awayClubId: "",
+  competitionId: "",
 };
 
 export function MatchForm({ mode, matchId }: MatchFormProps) {
@@ -30,6 +35,11 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
   const [loading, setLoading] = useState(mode === "edit");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [seasons, setSeasons] = useState<MaintenanceRecord[]>([]);
+  const [clubs, setClubs] = useState<MaintenanceRecord[]>([]);
+  const [competitions, setCompetitions] = useState<MaintenanceRecord[]>([]);
+
+  useEffect(() => { Promise.all([apiFetch<MaintenanceRecord[]>("/api/maintenance/seasons"),apiFetch<MaintenanceRecord[]>("/api/maintenance/clubs"),apiFetch<MaintenanceRecord[]>("/api/maintenance/competitions")]).then(([s,c,co])=>{setSeasons(s);setClubs(c);setCompetitions(co)}).catch((err:Error)=>setError(err.message)); }, []);
 
   useEffect(() => {
     if (mode !== "edit" || !matchId) {
@@ -46,6 +56,11 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
           competition: match.competition ?? "",
           venue: match.venue ?? "",
           notes: match.notes ?? "",
+          roundName: match.roundName ?? "",
+          seasonId: match.seasonId ?? "",
+          homeClubId: match.homeClubId ?? "",
+          awayClubId: match.awayClubId ?? "",
+          competitionId: match.competitionId ?? "",
         }),
       )
       .catch((err: Error) => setError(err.message))
@@ -58,10 +73,11 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
     setError(null);
 
     try {
+      const payload = { ...form, title: `Jornada ${form.roundName} - ${form.teamName} vs ${form.opponentName}` };
       const saved =
         mode === "create"
-          ? await apiFetch<MatchRecord>("/api/matches", { method: "POST", body: JSON.stringify(form) })
-          : await apiFetch<MatchRecord>(`/api/matches/${matchId}`, { method: "PATCH", body: JSON.stringify(form) });
+          ? await apiFetch<MatchRecord>("/api/matches", { method: "POST", body: JSON.stringify(payload) })
+          : await apiFetch<MatchRecord>(`/api/matches/${matchId}`, { method: "PATCH", body: JSON.stringify(payload) });
 
       router.push(`/analysis/${saved.id}`);
     } catch (err) {
@@ -96,12 +112,13 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
             {error ? <div className="rounded-md border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field name="title" label="Title" value={form.title} onChange={setForm} required />
-              <Field name="teamName" label="Our team" value={form.teamName} onChange={setForm} required />
-              <Field name="opponentName" label="Opponent" value={form.opponentName} onChange={setForm} required />
-              <Field name="competition" label="Competition" value={form.competition ?? ""} onChange={setForm} />
-              <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" />
-              <Field name="venue" label="Venue" value={form.venue ?? ""} onChange={setForm} />
+              <Field name="roundName" label="Jornada" value={form.roundName ?? ""} onChange={setForm} type="number" required />
+              <Choice label="Temporada" value={form.seasonId ?? ""} items={seasons} required onChange={id=>setForm(f=>({...f,seasonId:id,competitionId:"",competition:"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))} />
+              <Choice label="Competição" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))}} />
+              <Choice label="Equipa da casa" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}))}} />
+              <Choice label="Equipa visitante" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}))}} />
+              <Field name="matchDate" label="Data" value={form.matchDate ?? ""} onChange={setForm} type="date" required />
+              <Field name="venue" label="Local" value={form.venue ?? ""} onChange={setForm} />
             </div>
 
             <div className="grid gap-2">
@@ -131,6 +148,8 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
     </div>
   );
 }
+
+function Choice({label,value,items,onChange,required=false,disabled=false}:{label:string;value:string;items:MaintenanceRecord[];onChange:(value:string)=>void;required?:boolean;disabled?:boolean}) { return <label className="grid gap-2"><FieldLabel>{label}</FieldLabel><Select value={value} required={required} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">Selecionar…</option>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</Select>{!disabled&&items.length===0?<span className="text-xs text-amber-200/70">Não existem opções associadas. Verifique a área de Manutenção.</span>:null}</label> }
 
 function Field({
   name,

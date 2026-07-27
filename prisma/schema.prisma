@@ -11,8 +11,47 @@ model User {
   id        String   @id @default(cuid())
   name      String?
   email     String?  @unique
+  username  String?  @unique
+  passwordHash String?
+  mustChangePassword Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model Season {
+  id String @id @default(cuid())
+  name String @unique
+  startDate DateTime?
+  endDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  matches Match[]
+  competitions Competition[]
+}
+
+model Club {
+  id String @id @default(cuid())
+  name String @unique
+  shortName String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  homeMatches Match[] @relation("HomeClub")
+  awayMatches Match[] @relation("AwayClub")
+  competitions Competition[]
+}
+
+model Competition {
+  id String @id @default(cuid())
+  name String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  matches Match[]
+  seasonId String?
+  season Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  clubs Club[]
+
+  @@index([seasonId])
+  @@unique([seasonId, name])
 }
 
 model Match {
@@ -24,11 +63,25 @@ model Match {
   competition  String?
   venue        String?
   notes        String?
+  roundName    String?
+  seasonId     String?
+  homeClubId   String?
+  awayClubId   String?
+  competitionId String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   videos  Video[]
   moments Moment[]
+  season Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
+  homeClub Club? @relation("HomeClub", fields: [homeClubId], references: [id], onDelete: SetNull)
+  awayClub Club? @relation("AwayClub", fields: [awayClubId], references: [id], onDelete: SetNull)
+  competitionRecord Competition? @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+
+  @@index([seasonId])
+  @@index([homeClubId])
+  @@index([awayClubId])
+  @@index([competitionId])
 }
 
 model Video {

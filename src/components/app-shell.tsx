@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Goal, Settings, Trophy } from "lucide-react";
+import { BarChart3, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
 import { PwaInstallButton } from "@/components/pwa-install-button";
 import { cn } from "@/lib/cn";
@@ -11,11 +11,15 @@ import { APP_NAME } from "@/lib/taxonomy";
 const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
   { href: "/matches/new", label: "New match", icon: Trophy },
+  { href: "/maintenance", label: "Manutenção", icon: Wrench },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  if (pathname === "/login" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
+
+  async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }
 
   return (
     <div className="min-h-screen">
@@ -54,6 +58,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })}
             </nav>
+            <button onClick={() => void logout()} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-white/[0.08] hover:text-white" aria-label="Terminar sessão"><LogOut size={16} /></button>
           </div>
         </div>
       </header>

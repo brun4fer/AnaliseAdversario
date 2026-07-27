@@ -11,6 +11,11 @@ export type MatchRecord = {
   competition: string | null;
   venue: string | null;
   notes: string | null;
+  roundName: string | null;
+  seasonId: string | null;
+  homeClubId: string | null;
+  awayClubId: string | null;
+  competitionId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -98,14 +103,21 @@ export type MatchDetail = MatchSummary & {
 };
 
 export type CreateMatchInput = {
-  title: string;
+  title?: string;
   teamName: string;
   opponentName: string;
   matchDate?: string | null;
   competition?: string | null;
   venue?: string | null;
   notes?: string | null;
+  roundName?: string | null;
+  seasonId?: string | null;
+  homeClubId?: string | null;
+  awayClubId?: string | null;
+  competitionId?: string | null;
 };
+
+export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
 
 export type UpdateMatchInput = Partial<CreateMatchInput>;
 

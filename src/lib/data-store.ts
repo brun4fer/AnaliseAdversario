@@ -227,6 +227,11 @@ function mapMatch(match: Match): MatchRecord {
     competition: match.competition,
     venue: match.venue,
     notes: match.notes,
+    roundName: match.roundName,
+    seasonId: match.seasonId,
+    homeClubId: match.homeClubId,
+    awayClubId: match.awayClubId,
+    competitionId: match.competitionId,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
@@ -565,16 +570,30 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
 }
 
 export async function createMatch(input: CreateMatchInput): Promise<MatchRecord> {
-  const title = input.title.trim();
   const teamName = input.teamName.trim();
   const opponentName = input.opponentName.trim();
+  const roundName = input.roundName?.trim();
+  const title = input.title?.trim() || `${roundName ? `Jornada ${roundName}` : "Jogo"} - ${teamName} vs ${opponentName}`;
 
-  if (!title || !teamName || !opponentName) {
-    throw new Error("Title, our team and opponent are required.");
+  if (!teamName || !opponentName || !roundName) {
+    throw new Error("A jornada e as duas equipas são obrigatórias.");
+  }
+  if (input.homeClubId && input.homeClubId === input.awayClubId) {
+    throw new Error("As equipas da casa e visitante têm de ser diferentes.");
   }
 
   if (shouldUseDatabase()) {
     await ensureDatabaseDefaults();
+    if (!input.seasonId || !input.competitionId || !input.homeClubId || !input.awayClubId) {
+      throw new Error("Temporada, competição e equipas são obrigatórias.");
+    }
+    const selectedCompetition = await prisma.competition.findFirst({
+      where: { id: input.competitionId, seasonId: input.seasonId },
+      include: { clubs: { where: { id: { in: [input.homeClubId, input.awayClubId] } }, select: { id: true } } },
+    });
+    if (!selectedCompetition || selectedCompetition.clubs.length !== 2) {
+      throw new Error("A competição ou as equipas selecionadas não pertencem à temporada indicada.");
+    }
     const match = await prisma.match.create({
       data: {
         title,
@@ -584,6 +603,11 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
         competition: normalizeOptionalText(input.competition),
         venue: normalizeOptionalText(input.venue),
         notes: normalizeOptionalText(input.notes),
+        roundName: normalizeOptionalText(input.roundName),
+        seasonId: normalizeOptionalText(input.seasonId),
+        homeClubId: normalizeOptionalText(input.homeClubId),
+        awayClubId: normalizeOptionalText(input.awayClubId),
+        competitionId: normalizeOptionalText(input.competitionId),
       },
     });
     return mapMatch(match);
@@ -600,6 +624,11 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     competition: normalizeOptionalText(input.competition),
     venue: normalizeOptionalText(input.venue),
     notes: normalizeOptionalText(input.notes),
+    roundName: normalizeOptionalText(input.roundName),
+    seasonId: normalizeOptionalText(input.seasonId),
+    homeClubId: normalizeOptionalText(input.homeClubId),
+    awayClubId: normalizeOptionalText(input.awayClubId),
+    competitionId: normalizeOptionalText(input.competitionId),
     createdAt,
     updatedAt: createdAt,
   };
@@ -619,6 +648,11 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
         ...(input.competition !== undefined ? { competition: normalizeOptionalText(input.competition) } : {}),
         ...(input.venue !== undefined ? { venue: normalizeOptionalText(input.venue) } : {}),
         ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+        ...(input.roundName !== undefined ? { roundName: normalizeOptionalText(input.roundName) } : {}),
+        ...(input.seasonId !== undefined ? { seasonId: normalizeOptionalText(input.seasonId) } : {}),
+        ...(input.homeClubId !== undefined ? { homeClubId: normalizeOptionalText(input.homeClubId) } : {}),
+        ...(input.awayClubId !== undefined ? { awayClubId: normalizeOptionalText(input.awayClubId) } : {}),
+        ...(input.competitionId !== undefined ? { competitionId: normalizeOptionalText(input.competitionId) } : {}),
       },
     });
     return mapMatch(match);
@@ -651,6 +685,11 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   if (input.notes !== undefined) {
     match.notes = normalizeOptionalText(input.notes);
   }
+  if (input.roundName !== undefined) match.roundName = normalizeOptionalText(input.roundName);
+  if (input.seasonId !== undefined) match.seasonId = normalizeOptionalText(input.seasonId);
+  if (input.homeClubId !== undefined) match.homeClubId = normalizeOptionalText(input.homeClubId);
+  if (input.awayClubId !== undefined) match.awayClubId = normalizeOptionalText(input.awayClubId);
+  if (input.competitionId !== undefined) match.competitionId = normalizeOptionalText(input.competitionId);
   match.updatedAt = now();
 
   return match;
