@@ -33,6 +33,7 @@ import type {
   VideoRecord,
 } from "@/lib/domain";
 import { hasDatabaseUrl, prisma } from "@/lib/prisma";
+import { requireCurrentUserId } from "@/lib/auth";
 
 type MemoryMoment = Omit<MomentRecord, "momentType" | "subMoments">;
 type MemorySubMoment = Omit<SubMomentRecord, "subMomentType">;
@@ -66,7 +67,7 @@ type PrismaSubMomentWithType = Prisma.SubMomentGetPayload<{
 
 const globalForStore = globalThis as unknown as {
   memoryStore?: MemoryStore;
-  databaseDefaultsReady?: boolean;
+  databaseDefaultsReadyFor?: Set<string>;
   databaseDefaultsVersion?: string;
 };
 
@@ -142,29 +143,27 @@ function shouldUseDatabase() {
   return hasDatabaseUrl();
 }
 
-async function ensureDatabaseDefaults() {
+async function ensureDatabaseDefaults(ownerId: string) {
   if (
     !shouldUseDatabase() ||
-    (globalForStore.databaseDefaultsReady && globalForStore.databaseDefaultsVersion === databaseDefaultsVersion)
+    (globalForStore.databaseDefaultsReadyFor?.has(ownerId) && globalForStore.databaseDefaultsVersion === databaseDefaultsVersion)
   ) {
     return;
   }
-
-  await migrateLegacyMomentTypeCodes();
-  await migrateLegacySubMomentTypeCodes();
 
   const savedMomentTypes: MomentTypeRecord[] = [];
 
   for (const type of defaultMomentTypes) {
     const saved = await prisma.momentType.upsert({
-      where: { code: type.code },
+      where: { ownerId_code: { ownerId, code: type.code } },
       update: {
         name: type.name,
         color: type.color,
         defaultShortcut: type.defaultShortcut,
       },
       create: {
-        id: type.id,
+        id: `${ownerId}-${type.id}`,
+        ownerId,
         name: type.name,
         code: type.code,
         color: type.color,
@@ -176,14 +175,15 @@ async function ensureDatabaseDefaults() {
 
   for (const type of defaultSubMomentTypes) {
     await prisma.subMomentType.upsert({
-      where: { code: type.code },
+      where: { ownerId_code: { ownerId, code: type.code } },
       update: {
         name: type.name,
         requiresFieldLocation: type.requiresFieldLocation,
         requiresGoalLocation: type.requiresGoalLocation,
       },
       create: {
-        id: type.id,
+        id: `${ownerId}-${type.id}`,
+        ownerId,
         name: type.name,
         code: type.code,
         requiresFieldLocation: type.requiresFieldLocation,
@@ -195,25 +195,12 @@ async function ensureDatabaseDefaults() {
   await deleteUnusedLegacySubMomentTypes();
 
   for (const shortcut of buildDefaultShortcuts(savedMomentTypes)) {
-    await prisma.shortcutSetting.upsert({
-      where: { id: shortcut.id },
-      update: {
-        actionType: shortcut.actionType,
-        targetType: shortcut.targetType,
-        targetId: shortcut.targetId,
-        key: shortcut.key,
-      },
-      create: {
-        id: shortcut.id,
-        actionType: shortcut.actionType,
-        targetType: shortcut.targetType,
-        targetId: shortcut.targetId,
-        key: shortcut.key,
-      },
-    });
+    const existing = await prisma.shortcutSetting.findFirst({ where: { ownerId, actionType: shortcut.actionType, targetType: shortcut.targetType, targetId: shortcut.targetId } });
+    if (!existing) await prisma.shortcutSetting.create({ data: { id: `${ownerId}-${shortcut.id}`, ownerId, actionType: shortcut.actionType, targetType: shortcut.targetType, targetId: shortcut.targetId, key: shortcut.key } });
   }
 
-  globalForStore.databaseDefaultsReady = true;
+  globalForStore.databaseDefaultsReadyFor ??= new Set();
+  globalForStore.databaseDefaultsReadyFor.add(ownerId);
   globalForStore.databaseDefaultsVersion = databaseDefaultsVersion;
 }
 
@@ -361,7 +348,7 @@ function sortByDefaultOrder<T extends { code: string; createdAt: string; name: s
 async function migrateLegacyMomentTypeCodes() {
   for (const mapping of legacyMomentTypeCodeMappings) {
     const [targetType, legacyTypes] = await Promise.all([
-      prisma.momentType.findUnique({ where: { code: mapping.to } }),
+      prisma.momentType.findFirst({ where: { code: mapping.to } }),
       prisma.momentType.findMany({ where: { code: mapping.from } }),
     ]);
 
@@ -389,7 +376,7 @@ async function migrateLegacyMomentTypeCodes() {
 async function migrateLegacySubMomentTypeCodes() {
   for (const mapping of legacySubMomentTypeCodeMappings) {
     const [targetType, legacyTypes] = await Promise.all([
-      prisma.subMomentType.findUnique({ where: { code: mapping.to } }),
+      prisma.subMomentType.findFirst({ where: { code: mapping.to } }),
       prisma.subMomentType.findMany({ where: { code: mapping.from } }),
     ]);
 
@@ -468,11 +455,12 @@ function hydrateMemoryMoment(store: MemoryStore, moment: MemoryMoment): MomentRe
 
 export async function listSettings(): Promise<SettingsPayload> {
   if (shouldUseDatabase()) {
-    await ensureDatabaseDefaults();
+    const ownerId = await requireCurrentUserId();
+    await ensureDatabaseDefaults(ownerId);
     const [momentTypes, subMomentTypes, shortcuts] = await Promise.all([
-      prisma.momentType.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.subMomentType.findMany({ orderBy: { createdAt: "asc" } }),
-      prisma.shortcutSetting.findMany({ orderBy: { createdAt: "asc" } }),
+      prisma.momentType.findMany({ where: { ownerId }, orderBy: { createdAt: "asc" } }),
+      prisma.subMomentType.findMany({ where: { ownerId }, orderBy: { createdAt: "asc" } }),
+      prisma.shortcutSetting.findMany({ where: { ownerId }, orderBy: { createdAt: "asc" } }),
     ]);
 
     return {
@@ -492,8 +480,10 @@ export async function listSettings(): Promise<SettingsPayload> {
 
 export async function listMatches(): Promise<MatchSummary[]> {
   if (shouldUseDatabase()) {
-    await ensureDatabaseDefaults();
+    const ownerId = await requireCurrentUserId();
+    await ensureDatabaseDefaults(ownerId);
     const matches = await prisma.match.findMany({
+      where: { ownerId },
       include: {
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         _count: { select: { moments: true } },
@@ -520,9 +510,10 @@ export async function listMatches(): Promise<MatchSummary[]> {
 
 export async function getMatchDetail(matchId: string): Promise<MatchDetail | null> {
   if (shouldUseDatabase()) {
-    await ensureDatabaseDefaults();
+    const ownerId = await requireCurrentUserId();
+    await ensureDatabaseDefaults(ownerId);
     const match = await prisma.match.findUnique({
-      where: { id: matchId },
+      where: { id: matchId, ownerId },
       include: {
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         moments: {
@@ -583,19 +574,21 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
   }
 
   if (shouldUseDatabase()) {
-    await ensureDatabaseDefaults();
+    const ownerId = await requireCurrentUserId();
+    await ensureDatabaseDefaults(ownerId);
     if (!input.seasonId || !input.competitionId || !input.homeClubId || !input.awayClubId) {
       throw new Error("Temporada, competição e equipas são obrigatórias.");
     }
     const selectedCompetition = await prisma.competition.findFirst({
-      where: { id: input.competitionId, seasonId: input.seasonId },
-      include: { clubs: { where: { id: { in: [input.homeClubId, input.awayClubId] } }, select: { id: true } } },
+      where: { id: input.competitionId, seasonId: input.seasonId, ownerId },
+      include: { clubs: { where: { id: { in: [input.homeClubId, input.awayClubId] }, ownerId }, select: { id: true } } },
     });
     if (!selectedCompetition || selectedCompetition.clubs.length !== 2) {
       throw new Error("A competição ou as equipas selecionadas não pertencem à temporada indicada.");
     }
     const match = await prisma.match.create({
       data: {
+        ownerId,
         title,
         teamName,
         opponentName,
@@ -638,8 +631,19 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
 
 export async function updateMatch(matchId: string, input: UpdateMatchInput): Promise<MatchRecord> {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const currentMatch = await prisma.match.findFirst({ where: { id: matchId, ownerId } });
+    if (!currentMatch) throw new Error("Jogo não encontrado.");
+    const seasonId = input.seasonId === undefined ? currentMatch.seasonId : input.seasonId;
+    const competitionId = input.competitionId === undefined ? currentMatch.competitionId : input.competitionId;
+    const homeClubId = input.homeClubId === undefined ? currentMatch.homeClubId : input.homeClubId;
+    const awayClubId = input.awayClubId === undefined ? currentMatch.awayClubId : input.awayClubId;
+    if (seasonId && competitionId && homeClubId && awayClubId) {
+      const competition = await prisma.competition.findFirst({ where: { id: competitionId, seasonId, ownerId }, include: { clubs: { where: { id: { in: [homeClubId, awayClubId] }, ownerId }, select: { id: true } } } });
+      if (!competition || competition.clubs.length !== 2) throw new Error("Temporada, competição ou equipas inválidas.");
+    }
     const match = await prisma.match.update({
-      where: { id: matchId },
+      where: { id: matchId, ownerId },
       data: {
         ...(input.title !== undefined ? { title: input.title.trim() } : {}),
         ...(input.teamName !== undefined ? { teamName: input.teamName.trim() } : {}),
@@ -697,7 +701,8 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
 
 export async function deleteMatch(matchId: string) {
   if (shouldUseDatabase()) {
-    await prisma.match.delete({ where: { id: matchId } });
+    const ownerId = await requireCurrentUserId();
+    await prisma.match.delete({ where: { id: matchId, ownerId } });
     return;
   }
 
@@ -713,7 +718,10 @@ export async function upsertVideoMetadata(matchId: string, input: VideoMetadataI
   const lastModified = input.lastModified ? normalizeDateInput(input.lastModified) : null;
 
   if (shouldUseDatabase()) {
-    await ensureDatabaseDefaults();
+    const ownerId = await requireCurrentUserId();
+    await ensureDatabaseDefaults(ownerId);
+    const ownedMatch = await prisma.match.findFirst({ where: { id: matchId, ownerId }, select: { id: true } });
+    if (!ownedMatch) throw new Error("Jogo não encontrado.");
     const existing = await prisma.video.findFirst({
       where: { matchId },
       orderBy: { updatedAt: "desc" },
@@ -770,6 +778,16 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
   const end = Math.max(start, input.endTimeSeconds);
 
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const [ownedMatch, ownedType] = await Promise.all([
+      prisma.match.findFirst({ where: { id: input.matchId, ownerId }, select: { id: true } }),
+      prisma.momentType.findFirst({ where: { id: input.momentTypeId, ownerId }, select: { id: true } }),
+    ]);
+    if (!ownedMatch || !ownedType) throw new Error("Jogo ou tipo de momento não encontrado.");
+    if (input.videoId) {
+      const ownedVideo = await prisma.video.findFirst({ where: { id: input.videoId, matchId: input.matchId, match: { ownerId } }, select: { id: true } });
+      if (!ownedVideo) throw new Error("Vídeo não encontrado.");
+    }
     const moment = await prisma.moment.create({
       data: {
         matchId: input.matchId,
@@ -813,9 +831,18 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
 
 export async function updateMoment(momentId: string, input: UpdateMomentInput): Promise<MomentRecord> {
   if (shouldUseDatabase()) {
-    const current = await prisma.moment.findUnique({ where: { id: momentId } });
+    const ownerId = await requireCurrentUserId();
+    const current = await prisma.moment.findFirst({ where: { id: momentId, match: { ownerId } } });
     if (!current) {
       throw new Error("Moment not found.");
+    }
+    if (input.momentTypeId) {
+      const ownedType = await prisma.momentType.findFirst({ where: { id: input.momentTypeId, ownerId }, select: { id: true } });
+      if (!ownedType) throw new Error("Tipo de momento não encontrado.");
+    }
+    if (input.videoId) {
+      const ownedVideo = await prisma.video.findFirst({ where: { id: input.videoId, match: { ownerId } }, select: { id: true } });
+      if (!ownedVideo) throw new Error("Vídeo não encontrado.");
     }
 
     const start = input.startTimeSeconds ?? current.startTimeSeconds;
@@ -867,6 +894,9 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
 
 export async function deleteMoment(momentId: string) {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const owned = await prisma.moment.findFirst({ where: { id: momentId, match: { ownerId } }, select: { id: true } });
+    if (!owned) throw new Error("Momento não encontrado.");
     await prisma.moment.delete({ where: { id: momentId } });
     return;
   }
@@ -878,6 +908,12 @@ export async function deleteMoment(momentId: string) {
 
 export async function createSubMoment(input: CreateSubMomentInput): Promise<SubMomentRecord> {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const [ownedMoment, ownedType] = await Promise.all([
+      prisma.moment.findFirst({ where: { id: input.momentId, match: { ownerId } }, select: { id: true } }),
+      prisma.subMomentType.findFirst({ where: { id: input.subMomentTypeId, ownerId }, select: { id: true } }),
+    ]);
+    if (!ownedMoment || !ownedType) throw new Error("Momento ou tipo de submomento não encontrado.");
     const subMoment = await prisma.subMoment.create({
       data: {
         momentId: input.momentId,
@@ -920,6 +956,13 @@ export async function createSubMoment(input: CreateSubMomentInput): Promise<SubM
 
 export async function updateSubMoment(subMomentId: string, input: UpdateSubMomentInput): Promise<SubMomentRecord> {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const owned = await prisma.subMoment.findFirst({ where: { id: subMomentId, moment: { match: { ownerId } } }, select: { id: true } });
+    if (!owned) throw new Error("Submomento não encontrado.");
+    if (input.subMomentTypeId) {
+      const ownedType = await prisma.subMomentType.findFirst({ where: { id: input.subMomentTypeId, ownerId }, select: { id: true } });
+      if (!ownedType) throw new Error("Tipo de submomento não encontrado.");
+    }
     const subMoment = await prisma.subMoment.update({
       where: { id: subMomentId },
       data: {
@@ -970,6 +1013,9 @@ export async function updateSubMoment(subMomentId: string, input: UpdateSubMomen
 
 export async function deleteSubMoment(subMomentId: string) {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const owned = await prisma.subMoment.findFirst({ where: { id: subMomentId, moment: { match: { ownerId } } }, select: { id: true } });
+    if (!owned) throw new Error("Submomento não encontrado.");
     await prisma.subMoment.delete({ where: { id: subMomentId } });
     return;
   }
@@ -980,8 +1026,9 @@ export async function deleteSubMoment(subMomentId: string) {
 
 export async function updateShortcut(shortcutId: string, key: string): Promise<ShortcutSettingRecord> {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
     const shortcut = await prisma.shortcutSetting.update({
-      where: { id: shortcutId },
+      where: { id: shortcutId, ownerId },
       data: { key },
     });
     return mapShortcut(shortcut);
@@ -1002,8 +1049,10 @@ export async function createMomentType(input: Pick<MomentTypeRecord, "name" | "c
   const code = input.code.trim().toUpperCase();
 
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
     const type = await prisma.momentType.create({
       data: {
+        ownerId,
         name: input.name.trim(),
         code,
         color: input.color,
@@ -1012,6 +1061,7 @@ export async function createMomentType(input: Pick<MomentTypeRecord, "name" | "c
     });
     await prisma.shortcutSetting.create({
       data: {
+        ownerId,
         actionType: "moment.toggle",
         targetType: "momentType",
         targetId: type.id,
@@ -1049,8 +1099,9 @@ export async function updateMomentType(
   input: Partial<Pick<MomentTypeRecord, "name" | "code" | "color" | "defaultShortcut">>,
 ) {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
     const type = await prisma.momentType.update({
-      where: { id: momentTypeId },
+      where: { id: momentTypeId, ownerId },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
@@ -1061,7 +1112,7 @@ export async function updateMomentType(
 
     if (input.defaultShortcut !== undefined) {
       await prisma.shortcutSetting.updateMany({
-        where: { actionType: "moment.toggle", targetType: "momentType", targetId: momentTypeId },
+        where: { ownerId, actionType: "moment.toggle", targetType: "momentType", targetId: momentTypeId },
         data: { key: input.defaultShortcut },
       });
     }
@@ -1099,11 +1150,14 @@ export async function updateMomentType(
 
 export async function deleteMomentType(momentTypeId: string) {
   if (shouldUseDatabase()) {
-    const count = await prisma.moment.count({ where: { momentTypeId } });
+    const ownerId = await requireCurrentUserId();
+    const owned = await prisma.momentType.findFirst({ where: { id: momentTypeId, ownerId }, select: { id: true } });
+    if (!owned) throw new Error("Tipo de momento não encontrado.");
+    const count = await prisma.moment.count({ where: { momentTypeId, match: { ownerId } } });
     if (count > 0) {
       throw new Error("Cannot delete a type with associated moments.");
     }
-    await prisma.shortcutSetting.deleteMany({ where: { targetType: "momentType", targetId: momentTypeId } });
+    await prisma.shortcutSetting.deleteMany({ where: { ownerId, targetType: "momentType", targetId: momentTypeId } });
     await prisma.momentType.delete({ where: { id: momentTypeId } });
     return;
   }
@@ -1123,8 +1177,10 @@ export async function createSubMomentType(
   const code = input.code.trim().toUpperCase();
 
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
     const type = await prisma.subMomentType.create({
       data: {
+        ownerId,
         name: input.name.trim(),
         code,
         requiresFieldLocation: input.requiresFieldLocation,
@@ -1153,8 +1209,9 @@ export async function updateSubMomentType(
   input: Partial<Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">>,
 ) {
   if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
     const type = await prisma.subMomentType.update({
-      where: { id: subMomentTypeId },
+      where: { id: subMomentTypeId, ownerId },
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
@@ -1188,7 +1245,10 @@ export async function updateSubMomentType(
 
 export async function deleteSubMomentType(subMomentTypeId: string) {
   if (shouldUseDatabase()) {
-    const count = await prisma.subMoment.count({ where: { subMomentTypeId } });
+    const ownerId = await requireCurrentUserId();
+    const owned = await prisma.subMomentType.findFirst({ where: { id: subMomentTypeId, ownerId }, select: { id: true } });
+    if (!owned) throw new Error("Tipo de submomento não encontrado.");
+    const count = await prisma.subMoment.count({ where: { subMomentTypeId, moment: { match: { ownerId } } } });
     if (count > 0) {
       throw new Error("Cannot delete a type with associated submoments.");
     }

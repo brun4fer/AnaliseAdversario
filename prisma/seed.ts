@@ -109,7 +109,7 @@ const playerShortcuts = [
 async function migrateLegacyMomentTypeCodes() {
   for (const mapping of legacyMomentTypeCodeMappings) {
     const [targetType, legacyTypes] = await Promise.all([
-      prisma.momentType.findUnique({ where: { code: mapping.to } }),
+      prisma.momentType.findFirst({ where: { code: mapping.to } }),
       prisma.momentType.findMany({ where: { code: mapping.from } }),
     ]);
 
@@ -137,7 +137,7 @@ async function migrateLegacyMomentTypeCodes() {
 async function migrateLegacySubMomentTypeCodes() {
   for (const mapping of legacySubMomentTypeCodeMappings) {
     const [targetType, legacyTypes] = await Promise.all([
-      prisma.subMomentType.findUnique({ where: { code: mapping.to } }),
+      prisma.subMomentType.findFirst({ where: { code: mapping.to } }),
       prisma.subMomentType.findMany({ where: { code: mapping.from } }),
     ]);
 
@@ -163,11 +163,14 @@ async function main() {
   await migrateLegacyMomentTypeCodes();
   await migrateLegacySubMomentTypeCodes();
 
+  const paulo = await prisma.user.findFirst({ where: { username: { equals: "Paulo", mode: "insensitive" } } });
+  if (!paulo) throw new Error("O utilizador Paulo tem de existir antes de executar o seed.");
+
   for (const type of momentTypes) {
     const savedType = await prisma.momentType.upsert({
-      where: { code: type.code },
+      where: { ownerId_code: { ownerId: paulo.id, code: type.code } },
       update: type,
-      create: type,
+      create: { ...type, ownerId: paulo.id },
     });
 
     await prisma.shortcutSetting.upsert({
@@ -180,6 +183,7 @@ async function main() {
       },
       create: {
         id: `seed-moment-${type.code}`,
+        ownerId: paulo.id,
         actionType: "moment.toggle",
         targetType: "momentType",
         targetId: savedType.id,
@@ -190,9 +194,9 @@ async function main() {
 
   for (const type of subMomentTypes) {
     await prisma.subMomentType.upsert({
-      where: { code: type.code },
+      where: { ownerId_code: { ownerId: paulo.id, code: type.code } },
       update: type,
-      create: type,
+      create: { ...type, ownerId: paulo.id },
     });
   }
 
@@ -227,6 +231,7 @@ async function main() {
       update: shortcut,
       create: {
         id: `seed-${shortcut.actionType}`,
+        ownerId: paulo.id,
         ...shortcut,
       },
     });

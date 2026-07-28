@@ -16,28 +16,43 @@ model User {
   mustChangePassword Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  seasons Season[]
+  clubs Club[]
+  competitions Competition[]
+  matches Match[]
+  momentTypes MomentType[]
+  subMomentTypes SubMomentType[]
+  shortcuts ShortcutSetting[]
 }
 
 model Season {
   id String @id @default(cuid())
-  name String @unique
+  name String
   startDate DateTime?
   endDate DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   matches Match[]
   competitions Competition[]
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  @@index([ownerId])
+  @@unique([ownerId, name])
 }
 
 model Club {
   id String @id @default(cuid())
-  name String @unique
+  name String
   shortName String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   homeMatches Match[] @relation("HomeClub")
   awayMatches Match[] @relation("AwayClub")
   competitions Competition[]
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  @@index([ownerId])
+  @@unique([ownerId, name])
 }
 
 model Competition {
@@ -49,8 +64,11 @@ model Competition {
   seasonId String?
   season Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
   clubs Club[]
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([seasonId])
+  @@index([ownerId])
   @@unique([seasonId, name])
 }
 
@@ -77,11 +95,14 @@ model Match {
   homeClub Club? @relation("HomeClub", fields: [homeClubId], references: [id], onDelete: SetNull)
   awayClub Club? @relation("AwayClub", fields: [awayClubId], references: [id], onDelete: SetNull)
   competitionRecord Competition? @relation(fields: [competitionId], references: [id], onDelete: SetNull)
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([seasonId])
   @@index([homeClubId])
   @@index([awayClubId])
   @@index([competitionId])
+  @@index([ownerId])
 }
 
 model Video {
@@ -105,13 +126,17 @@ model Video {
 model MomentType {
   id              String   @id @default(cuid())
   name            String
-  code            String   @unique
+  code            String
   color           String
   defaultShortcut String
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
   moments Moment[]
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  @@unique([ownerId, code])
+  @@index([ownerId])
 }
 
 model Moment {
@@ -139,13 +164,17 @@ model Moment {
 model SubMomentType {
   id                    String   @id @default(cuid())
   name                  String
-  code                  String   @unique
+  code                  String
   requiresFieldLocation Boolean  @default(true)
   requiresGoalLocation  Boolean  @default(false)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
 
   subMoments SubMoment[]
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  @@unique([ownerId, code])
+  @@index([ownerId])
 }
 
 model SubMoment {
@@ -176,6 +205,9 @@ model ShortcutSetting {
   key        String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
+  ownerId String?
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
 
   @@index([actionType, targetType, targetId])
+  @@index([ownerId])
 }

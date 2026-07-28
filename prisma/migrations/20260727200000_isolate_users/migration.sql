@@ -1,0 +1,38 @@
+ALTER TABLE "Season" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "Club" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "Competition" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "Match" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "MomentType" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "SubMomentType" ADD COLUMN "ownerId" TEXT;
+ALTER TABLE "ShortcutSetting" ADD COLUMN "ownerId" TEXT;
+
+UPDATE "Season" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "Club" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "Competition" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "Match" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "MomentType" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "SubMomentType" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+UPDATE "ShortcutSetting" SET "ownerId" = (SELECT "id" FROM "User" WHERE lower("username") = 'paulo' LIMIT 1);
+
+DROP INDEX "MomentType_code_key";
+DROP INDEX "SubMomentType_code_key";
+DROP INDEX "Season_name_key";
+DROP INDEX "Club_name_key";
+CREATE UNIQUE INDEX "Season_ownerId_name_key" ON "Season"("ownerId", "name");
+CREATE UNIQUE INDEX "Club_ownerId_name_key" ON "Club"("ownerId", "name");
+CREATE UNIQUE INDEX "MomentType_ownerId_code_key" ON "MomentType"("ownerId", "code");
+CREATE UNIQUE INDEX "SubMomentType_ownerId_code_key" ON "SubMomentType"("ownerId", "code");
+CREATE INDEX "Season_ownerId_idx" ON "Season"("ownerId");
+CREATE INDEX "Club_ownerId_idx" ON "Club"("ownerId");
+CREATE INDEX "Competition_ownerId_idx" ON "Competition"("ownerId");
+CREATE INDEX "Match_ownerId_idx" ON "Match"("ownerId");
+CREATE INDEX "MomentType_ownerId_idx" ON "MomentType"("ownerId");
+CREATE INDEX "SubMomentType_ownerId_idx" ON "SubMomentType"("ownerId");
+CREATE INDEX "ShortcutSetting_ownerId_idx" ON "ShortcutSetting"("ownerId");
+ALTER TABLE "Season" ADD CONSTRAINT "Season_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Club" ADD CONSTRAINT "Club_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Competition" ADD CONSTRAINT "Competition_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Match" ADD CONSTRAINT "Match_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "MomentType" ADD CONSTRAINT "MomentType_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "SubMomentType" ADD CONSTRAINT "SubMomentType_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "ShortcutSetting" ADD CONSTRAINT "ShortcutSetting_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

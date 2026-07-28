@@ -1,5 +1,6 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { cookies } from "next/headers";
 
 export const SESSION_COOKIE = "analise_session";
 const temporaryUsers = [
@@ -51,6 +52,12 @@ export function readSessionToken(token?: string | null): SessionPayload | null {
     const payload = JSON.parse(Buffer.from(data, "base64url").toString()) as SessionPayload;
     return payload.exp > Date.now() ? payload : null;
   } catch { return null; }
+}
+
+export async function requireCurrentUserId() {
+  const session = readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
+  if (!session) throw new Error("Sessão inválida ou expirada.");
+  return session.userId;
 }
 
 export const sessionCookieOptions = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 7 };

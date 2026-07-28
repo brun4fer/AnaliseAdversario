@@ -40,6 +40,7 @@ import type {
   VideoRecord,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
+import { rememberMatchVideo } from "@/lib/local-video-store";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
 import { downloadBlob, exportMomentClip } from "@/lib/video-export";
@@ -91,6 +92,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
   const [exporting, setExporting] = useState<"clip" | "group" | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [videoFinished, setVideoFinished] = useState(false);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -424,15 +426,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       })
       .filter(Boolean) as ShortcutBinding[];
 
-    const subMomentBindings = selectedSubMomentTypes
-      .map((subMomentType, index) => {
-        const key = getSubMomentShortcut(index);
-        return key ? { key, handler: () => void handleQuickAddSubMoment(subMomentType) } : null;
-      })
-      .filter(Boolean) as ShortcutBinding[];
-
-    return [...configuredBindings, ...subMomentBindings];
-  }, [cancelLastActiveMoment, handleQuickAddSubMoment, momentTypes, player, selectedSubMomentTypes, settings, toggleMoment]);
+    return configuredBindings;
+  }, [cancelLastActiveMoment, momentTypes, player, settings, toggleMoment]);
 
   useKeyboardShortcuts(shortcutBindings, Boolean(settings) && !pendingSubMoment);
 
@@ -448,6 +443,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
     pendingFileRef.current = file;
     player.loadFile(file);
+    void rememberMatchVideo(matchId, file).catch(() => setNotice("O vídeo foi aberto, mas é demasiado grande para ficar disponível automaticamente noutras páginas."));
     setNotice("Reading local video metadata.");
   }
 
@@ -705,6 +701,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                   onTimeUpdate={player.handleTimeUpdate}
                   onPlay={() => player.setIsPlaying(true)}
                   onPause={() => player.setIsPlaying(false)}
+                  onEnded={() => { player.setIsPlaying(false); setVideoFinished(true); }}
                   onError={() => player.setError("Could not play this video. For better compatibility, use MP4 with H.264 codec.")}
                 />
               ) : (
@@ -784,7 +781,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               </div>
             </div>
 
-            <div className="p-3">
+            <div className="hidden">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Submomentos</p>
                 {selectedMoment ? <span className="truncate text-[11px] text-cyan-100">{selectedMoment.momentType.name}</span> : null}
@@ -910,6 +907,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           </Panel>
         </aside>
       </div>
+
+      <div className="space-y-3">
+        <Timeline moments={match.moments} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
+        <Panel className="flex flex-col gap-4 border-cyan-300/20 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div><p className="font-medium text-white">Edição de submomentos</p><p className="mt-1 text-sm text-slate-400">Depois de marcar os momentos principais, classifique os clips numa área dedicada.</p></div>
+          <Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Editar submomentos <ChevronsRight size={16} /></Button></Link>
+        </Panel>
+      </div>
+
+      {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">O vídeo terminou</h2><p className="mt-2 text-sm text-slate-400">Os momentos principais ficaram guardados. Pode agora avançar para a identificação dos submomentos.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Continuar aqui</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edição de submomentos</Button></Link></div></Panel></div> : null}
 
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">
