@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { BarChart3, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
+import { BarChart3, FileBarChart, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
 import { PwaInstallButton } from "@/components/pwa-install-button";
 import { cn } from "@/lib/cn";
@@ -11,6 +11,7 @@ import { APP_NAME } from "@/lib/taxonomy";
 const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
   { href: "/matches/new", label: "New match", icon: Trophy },
+  { href: "/reports", label: "Relatórios", icon: FileBarChart },
   { href: "/maintenance", label: "Manutenção", icon: Wrench },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
