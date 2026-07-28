@@ -24,11 +24,11 @@ export async function middleware(request: NextRequest) {
   if (publicPaths.some((item) => path === item) || path.startsWith("/_next") || path.includes(".")) return NextResponse.next();
   const session = await validSession(request.cookies.get(COOKIE)?.value);
   if (!session) {
-    if (path.startsWith("/api/")) return NextResponse.json({ error: "Sessão inválida ou expirada." }, { status: 401 });
+    if (path.startsWith("/api/")) return NextResponse.json({ error: "Invalid or expired session." }, { status: 401 });
     const url = new URL("/login", request.url); url.searchParams.set("next", path); return NextResponse.redirect(url);
   }
   if (session.mustChangePassword && path !== "/change-password" && path !== "/api/auth/change-password" && path !== "/api/auth/logout") {
-    if (path.startsWith("/api/")) return NextResponse.json({ error: "É necessário alterar a palavra-passe." }, { status: 403 });
+    if (path.startsWith("/api/")) return NextResponse.json({ error: "You must change your password before continuing." }, { status: 403 });
     return NextResponse.redirect(new URL("/change-password", request.url));
   }
   if (path === "/login") return NextResponse.redirect(new URL("/", request.url));

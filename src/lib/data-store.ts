@@ -564,27 +564,27 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
   const teamName = input.teamName.trim();
   const opponentName = input.opponentName.trim();
   const roundName = input.roundName?.trim();
-  const title = input.title?.trim() || `${roundName ? `Jornada ${roundName}` : "Jogo"} - ${teamName} vs ${opponentName}`;
+  const title = input.title?.trim() || `${roundName ? `Round ${roundName}` : "Match"} - ${teamName} vs ${opponentName}`;
 
   if (!teamName || !opponentName || !roundName) {
-    throw new Error("A jornada e as duas equipas são obrigatórias.");
+    throw new Error("The round and both teams are required.");
   }
   if (input.homeClubId && input.homeClubId === input.awayClubId) {
-    throw new Error("As equipas da casa e visitante têm de ser diferentes.");
+    throw new Error("The home and away teams must be different.");
   }
 
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     await ensureDatabaseDefaults(ownerId);
     if (!input.seasonId || !input.competitionId || !input.homeClubId || !input.awayClubId) {
-      throw new Error("Temporada, competição e equipas são obrigatórias.");
+      throw new Error("Season, competition and teams are required.");
     }
     const selectedCompetition = await prisma.competition.findFirst({
       where: { id: input.competitionId, seasonId: input.seasonId, ownerId },
       include: { clubs: { where: { id: { in: [input.homeClubId, input.awayClubId] }, ownerId }, select: { id: true } } },
     });
     if (!selectedCompetition || selectedCompetition.clubs.length !== 2) {
-      throw new Error("A competição ou as equipas selecionadas não pertencem à temporada indicada.");
+      throw new Error("The selected competition or teams do not belong to this season.");
     }
     const match = await prisma.match.create({
       data: {
@@ -633,14 +633,14 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const currentMatch = await prisma.match.findFirst({ where: { id: matchId, ownerId } });
-    if (!currentMatch) throw new Error("Jogo não encontrado.");
+    if (!currentMatch) throw new Error("Match not found.");
     const seasonId = input.seasonId === undefined ? currentMatch.seasonId : input.seasonId;
     const competitionId = input.competitionId === undefined ? currentMatch.competitionId : input.competitionId;
     const homeClubId = input.homeClubId === undefined ? currentMatch.homeClubId : input.homeClubId;
     const awayClubId = input.awayClubId === undefined ? currentMatch.awayClubId : input.awayClubId;
     if (seasonId && competitionId && homeClubId && awayClubId) {
       const competition = await prisma.competition.findFirst({ where: { id: competitionId, seasonId, ownerId }, include: { clubs: { where: { id: { in: [homeClubId, awayClubId] }, ownerId }, select: { id: true } } } });
-      if (!competition || competition.clubs.length !== 2) throw new Error("Temporada, competição ou equipas inválidas.");
+      if (!competition || competition.clubs.length !== 2) throw new Error("Invalid season, competition or teams.");
     }
     const match = await prisma.match.update({
       where: { id: matchId, ownerId },
@@ -721,7 +721,7 @@ export async function upsertVideoMetadata(matchId: string, input: VideoMetadataI
     const ownerId = await requireCurrentUserId();
     await ensureDatabaseDefaults(ownerId);
     const ownedMatch = await prisma.match.findFirst({ where: { id: matchId, ownerId }, select: { id: true } });
-    if (!ownedMatch) throw new Error("Jogo não encontrado.");
+    if (!ownedMatch) throw new Error("Match not found.");
     const existing = await prisma.video.findFirst({
       where: { matchId },
       orderBy: { updatedAt: "desc" },
@@ -783,10 +783,10 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
       prisma.match.findFirst({ where: { id: input.matchId, ownerId }, select: { id: true } }),
       prisma.momentType.findFirst({ where: { id: input.momentTypeId, ownerId }, select: { id: true } }),
     ]);
-    if (!ownedMatch || !ownedType) throw new Error("Jogo ou tipo de momento não encontrado.");
+    if (!ownedMatch || !ownedType) throw new Error("Match or moment type not found.");
     if (input.videoId) {
       const ownedVideo = await prisma.video.findFirst({ where: { id: input.videoId, matchId: input.matchId, match: { ownerId } }, select: { id: true } });
-      if (!ownedVideo) throw new Error("Vídeo não encontrado.");
+      if (!ownedVideo) throw new Error("Video not found.");
     }
     const moment = await prisma.moment.create({
       data: {
@@ -838,11 +838,11 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
     }
     if (input.momentTypeId) {
       const ownedType = await prisma.momentType.findFirst({ where: { id: input.momentTypeId, ownerId }, select: { id: true } });
-      if (!ownedType) throw new Error("Tipo de momento não encontrado.");
+      if (!ownedType) throw new Error("Moment type not found.");
     }
     if (input.videoId) {
       const ownedVideo = await prisma.video.findFirst({ where: { id: input.videoId, match: { ownerId } }, select: { id: true } });
-      if (!ownedVideo) throw new Error("Vídeo não encontrado.");
+      if (!ownedVideo) throw new Error("Video not found.");
     }
 
     const start = input.startTimeSeconds ?? current.startTimeSeconds;
@@ -896,7 +896,7 @@ export async function deleteMoment(momentId: string) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const owned = await prisma.moment.findFirst({ where: { id: momentId, match: { ownerId } }, select: { id: true } });
-    if (!owned) throw new Error("Momento não encontrado.");
+    if (!owned) throw new Error("Moment not found.");
     await prisma.moment.delete({ where: { id: momentId } });
     return;
   }
@@ -913,7 +913,7 @@ export async function createSubMoment(input: CreateSubMomentInput): Promise<SubM
       prisma.moment.findFirst({ where: { id: input.momentId, match: { ownerId } }, select: { id: true } }),
       prisma.subMomentType.findFirst({ where: { id: input.subMomentTypeId, ownerId }, select: { id: true } }),
     ]);
-    if (!ownedMoment || !ownedType) throw new Error("Momento ou tipo de submomento não encontrado.");
+    if (!ownedMoment || !ownedType) throw new Error("Moment or submoment type not found.");
     const subMoment = await prisma.subMoment.create({
       data: {
         momentId: input.momentId,
@@ -958,10 +958,10 @@ export async function updateSubMoment(subMomentId: string, input: UpdateSubMomen
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const owned = await prisma.subMoment.findFirst({ where: { id: subMomentId, moment: { match: { ownerId } } }, select: { id: true } });
-    if (!owned) throw new Error("Submomento não encontrado.");
+    if (!owned) throw new Error("Submoment not found.");
     if (input.subMomentTypeId) {
       const ownedType = await prisma.subMomentType.findFirst({ where: { id: input.subMomentTypeId, ownerId }, select: { id: true } });
-      if (!ownedType) throw new Error("Tipo de submomento não encontrado.");
+      if (!ownedType) throw new Error("Submoment type not found.");
     }
     const subMoment = await prisma.subMoment.update({
       where: { id: subMomentId },
@@ -1015,7 +1015,7 @@ export async function deleteSubMoment(subMomentId: string) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const owned = await prisma.subMoment.findFirst({ where: { id: subMomentId, moment: { match: { ownerId } } }, select: { id: true } });
-    if (!owned) throw new Error("Submomento não encontrado.");
+    if (!owned) throw new Error("Submoment not found.");
     await prisma.subMoment.delete({ where: { id: subMomentId } });
     return;
   }
@@ -1152,7 +1152,7 @@ export async function deleteMomentType(momentTypeId: string) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const owned = await prisma.momentType.findFirst({ where: { id: momentTypeId, ownerId }, select: { id: true } });
-    if (!owned) throw new Error("Tipo de momento não encontrado.");
+    if (!owned) throw new Error("Moment type not found.");
     const count = await prisma.moment.count({ where: { momentTypeId, match: { ownerId } } });
     if (count > 0) {
       throw new Error("Cannot delete a type with associated moments.");
@@ -1247,7 +1247,7 @@ export async function deleteSubMomentType(subMomentTypeId: string) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const owned = await prisma.subMomentType.findFirst({ where: { id: subMomentTypeId, ownerId }, select: { id: true } });
-    if (!owned) throw new Error("Tipo de submomento não encontrado.");
+    if (!owned) throw new Error("Submoment type not found.");
     const count = await prisma.subMoment.count({ where: { subMomentTypeId, moment: { match: { ownerId } } } });
     if (count > 0) {
       throw new Error("Cannot delete a type with associated submoments.");

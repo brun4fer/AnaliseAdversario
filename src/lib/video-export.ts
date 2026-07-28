@@ -6,6 +6,7 @@ type ExportMomentClipInput = {
   match: Pick<MatchDetail, "title" | "opponentName" | "competition">;
   moment: MomentRecord;
   onStatus?: (status: string) => void;
+  quality?: ExportQuality;
 };
 
 type ExportMomentClipResult = {
@@ -18,14 +19,26 @@ type AudioExportResources = {
   audioContext: AudioContext;
 };
 
-const exportFrameRate = 30;
-const maxExportWidth = 1920;
+export type ExportQuality = "original" | "high" | "standard";
+
+export const exportQualityOptions: { value: ExportQuality; label: string; detail: string }[] = [
+  { value: "original", label: "Original", detail: "Original resolution · 60 FPS · 30 Mbps" },
+  { value: "high", label: "High quality", detail: "Up to 1080p · 50 FPS · 18 Mbps" },
+  { value: "standard", label: "Standard", detail: "Up to 1080p · 30 FPS · 9 Mbps" },
+];
+
+const qualitySettings: Record<ExportQuality, { maxWidth: number | null; frameRate: number; videoBitsPerSecond: number; audioBitsPerSecond: number }> = {
+  original: { maxWidth: null, frameRate: 60, videoBitsPerSecond: 30_000_000, audioBitsPerSecond: 256_000 },
+  high: { maxWidth: 1920, frameRate: 50, videoBitsPerSecond: 18_000_000, audioBitsPerSecond: 192_000 },
+  standard: { maxWidth: 1920, frameRate: 30, videoBitsPerSecond: 9_000_000, audioBitsPerSecond: 160_000 },
+};
 
 export async function exportMomentClip({
   sourceUrl,
   match,
   moment,
   onStatus,
+  quality = "high",
 }: ExportMomentClipInput): Promise<ExportMomentClipResult> {
   if (typeof MediaRecorder === "undefined") {
     throw new Error("This browser does not support video export.");
@@ -33,7 +46,7 @@ export async function exportMomentClip({
 
   const mimeType = getSupportedVideoMimeType();
   if (!mimeType) {
-    throw new Error("Este navegador não suporta exportação MP4/H.264. Utilize uma versão recente do Chrome ou Edge.");
+    throw new Error("This browser does not support MP4/H.264 export. Use a recent version of Chrome or Edge.");
   }
 
   onStatus?.("Preparing video...");
@@ -59,7 +72,8 @@ export async function exportMomentClip({
     const end = Math.max(start + 0.1, Math.min(moment.endTimeSeconds, mediaDuration));
     const clipDuration = end - start;
     const canvas = document.createElement("canvas");
-    const dimensions = getExportDimensions(sourceVideo.videoWidth, sourceVideo.videoHeight);
+    const exportSettings = qualitySettings[quality];
+    const dimensions = getExportDimensions(sourceVideo.videoWidth, sourceVideo.videoHeight, exportSettings.maxWidth);
     canvas.width = dimensions.width;
     canvas.height = dimensions.height;
 
@@ -68,14 +82,18 @@ export async function exportMomentClip({
       throw new Error("Could not prepare the video for export.");
     }
 
-    outputStream = canvas.captureStream(exportFrameRate);
+    outputStream = canvas.captureStream(exportSettings.frameRate);
     audioResources = await addAudioToStream(sourceVideo, outputStream);
     if (!audioResources) {
       sourceVideo.muted = true;
     }
 
     const chunks: Blob[] = [];
-    const recorder = new MediaRecorder(outputStream, { mimeType });
+    const recorder = new MediaRecorder(outputStream, {
+      mimeType,
+      videoBitsPerSecond: exportSettings.videoBitsPerSecond,
+      audioBitsPerSecond: exportSettings.audioBitsPerSecond,
+    });
     const recording = new Promise<Blob>((resolve, reject) => {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
@@ -191,10 +209,10 @@ async function addAudioToStream(video: HTMLVideoElement, stream: MediaStream): P
   }
 }
 
-function getExportDimensions(videoWidth: number, videoHeight: number) {
+function getExportDimensions(videoWidth: number, videoHeight: number, maxWidth: number | null) {
   const sourceWidth = videoWidth || 1280;
   const sourceHeight = videoHeight || 720;
-  const scale = Math.min(1, maxExportWidth / sourceWidth);
+  const scale = maxWidth ? Math.min(1, maxWidth / sourceWidth) : 1;
 
   return {
     width: Math.max(2, Math.round(sourceWidth * scale)),

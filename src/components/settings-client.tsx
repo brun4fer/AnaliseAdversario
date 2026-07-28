@@ -247,7 +247,7 @@ function SubMomentTypesPanel({
   const [newType, setNewType] = useState({
     name: "",
     code: "",
-    requiresFieldLocation: true,
+    requiresFieldLocation: false,
     requiresGoalLocation: false,
   });
 
@@ -272,7 +272,7 @@ function SubMomentTypesPanel({
       method: "POST",
       body: JSON.stringify(newType),
     });
-    setNewType({ name: "", code: "", requiresFieldLocation: true, requiresGoalLocation: false });
+    setNewType({ name: "", code: "", requiresFieldLocation: false, requiresGoalLocation: false });
     await onRefresh();
     onNotice("Submoment type created.");
   }
@@ -291,19 +291,9 @@ function SubMomentTypesPanel({
       <h2 className="font-semibold text-white">Submoments</h2>
       <div className="mt-4 space-y-3">
         {drafts.map((type) => (
-          <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.7fr_auto_auto_auto]">
+          <div key={type.id} className="grid gap-2 rounded-md border border-white/10 bg-white/[0.035] p-3 lg:grid-cols-[1.2fr_0.7fr_auto]">
             <TextInput value={type.name} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, name: event.target.value } : item)))} />
             <TextInput value={type.code} onChange={(event) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, code: event.target.value } : item)))} />
-            <ToggleLabel
-              label="Field"
-              checked={type.requiresFieldLocation}
-              onChange={(checked) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, requiresFieldLocation: checked } : item)))}
-            />
-            <ToggleLabel
-              label="Goal"
-              checked={type.requiresGoalLocation}
-              onChange={(checked) => setDrafts((current) => current.map((item) => (item.id === type.id ? { ...item, requiresGoalLocation: checked } : item)))}
-            />
             <div className="flex gap-2">
               <Button size="icon" variant="secondary" aria-label="Save submoment" onClick={() => void saveType(type)}>
                 <Save size={15} />
@@ -318,11 +308,9 @@ function SubMomentTypesPanel({
 
       <div className="mt-4 rounded-md border border-cyan-300/20 bg-cyan-300/[0.05] p-3">
         <FieldLabel>New submoment</FieldLabel>
-        <div className="mt-2 grid gap-2 lg:grid-cols-[1.2fr_0.7fr_auto_auto_auto]">
+        <div className="mt-2 grid gap-2 lg:grid-cols-[1.2fr_0.7fr_auto]">
           <TextInput placeholder="Name" value={newType.name} onChange={(event) => setNewType((current) => ({ ...current, name: event.target.value }))} />
           <TextInput placeholder="Code" value={newType.code} onChange={(event) => setNewType((current) => ({ ...current, code: event.target.value }))} />
-          <ToggleLabel label="Field" checked={newType.requiresFieldLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresFieldLocation: checked }))} />
-          <ToggleLabel label="Goal" checked={newType.requiresGoalLocation} onChange={(checked) => setNewType((current) => ({ ...current, requiresGoalLocation: checked }))} />
           <Button variant="primary" onClick={() => void createType()} disabled={!newType.name || !newType.code}>
             <Plus size={15} />
             Create
@@ -330,20 +318,6 @@ function SubMomentTypesPanel({
         </div>
       </div>
     </Panel>
-  );
-}
-
-function ToggleLabel({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
-  return (
-    <label className="flex h-10 items-center gap-2 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-slate-300">
-      <input
-        type="checkbox"
-        className="h-4 w-4 rounded border-white/20 bg-pitch-900 accent-cyan-300"
-        checked={checked}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      {label}
-    </label>
   );
 }
 

@@ -24,7 +24,7 @@ import {
 } from "lucide-react";
 
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
-import { Badge, Button, FieldLabel, Panel, TextInput } from "@/components/ui";
+import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { cn } from "@/lib/cn";
@@ -43,7 +43,7 @@ import { apiFetch } from "@/lib/http";
 import { rememberMatchVideo } from "@/lib/local-video-store";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
-import { downloadBlob, exportMomentClip } from "@/lib/video-export";
+import { downloadBlob, exportMomentClip, exportQualityOptions, type ExportQuality } from "@/lib/video-export";
 
 type ActiveMoment = {
   id: string;
@@ -92,6 +92,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
   const [exporting, setExporting] = useState<"clip" | "group" | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [exportQuality, setExportQuality] = useState<ExportQuality>("high");
   const [videoFinished, setVideoFinished] = useState(false);
 
   useEffect(() => {
@@ -171,7 +172,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           x: subMoment.fieldX as number,
           y: subMoment.fieldY as number,
           label: subMoment.subMomentType.name,
-          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "No time",
           active: subMoment.id === selectedSubMomentId,
         })),
     [selectedMoment?.subMoments, selectedSubMomentId],
@@ -186,7 +187,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           x: subMoment.goalX as number,
           y: subMoment.goalY as number,
           label: subMoment.subMomentType.name,
-          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "Sem tempo",
+          detail: subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "No time",
           active: subMoment.id === selectedSubMomentId,
         })),
     [selectedMoment?.subMoments, selectedSubMomentId],
@@ -443,7 +444,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
     pendingFileRef.current = file;
     player.loadFile(file);
-    void rememberMatchVideo(matchId, file).catch(() => setNotice("O vídeo foi aberto, mas é demasiado grande para ficar disponível automaticamente noutras páginas."));
+    void rememberMatchVideo(matchId, file).catch(() => setNotice("The video was opened, but it is too large to remain automatically available on other pages."));
     setNotice("Reading local video metadata.");
   }
 
@@ -516,7 +517,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       return;
     }
     if (!player.sourceUrl) {
-      setNotice("Selecione primeiro o vídeo local.");
+      setNotice("Select the local video first.");
       fileInputRef.current?.click();
       return;
     }
@@ -528,12 +529,13 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         sourceUrl: player.sourceUrl,
         match,
         moment: selectedMoment,
+        quality: exportQuality,
         onStatus: setExportStatus,
       });
       downloadBlob(exported.blob, exported.fileName);
-      setNotice(`Vídeo MP4 exportado: ${exported.fileName}`);
+      setNotice(`MP4 video exported: ${exported.fileName}`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Não foi possível exportar o vídeo.");
+      setNotice(err instanceof Error ? err.message : "Could not export the video.");
     } finally {
       setExporting(null);
       setExportStatus(null);
@@ -545,7 +547,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       return;
     }
     if (!player.sourceUrl) {
-      setNotice("Selecione primeiro o vídeo local.");
+      setNotice("Select the local video first.");
       fileInputRef.current?.click();
       return;
     }
@@ -557,21 +559,21 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       const zip = new JSZip();
       for (let index = 0; index < moments.length; index += 1) {
         const moment = moments[index];
-        setExportStatus(`A exportar ${index + 1} de ${moments.length}: ${moment.momentType.name}`);
-        const exported = await exportMomentClip({ sourceUrl: player.sourceUrl, match, moment });
+        setExportStatus(`Exporting ${index + 1} of ${moments.length}: ${moment.momentType.name}`);
+        const exported = await exportMomentClip({ sourceUrl: player.sourceUrl, match, moment, quality: exportQuality });
         zip.file(exported.fileName, exported.blob);
       }
-      setExportStatus("A preparar o ficheiro ZIP…");
+      setExportStatus("Preparing the ZIP file…");
       const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
       const safeType = selectedMoment.momentType.name
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^\w.-]+/g, "-")
-        .replace(/^-+|-+$/g, "") || "momento";
+        .replace(/^-+|-+$/g, "") || "moment";
       downloadBlob(blob, `${safeType}-${moments.length}-videos.zip`);
-      setNotice(`${moments.length} vídeos MP4 exportados.`);
+      setNotice(`${moments.length} MP4 videos exported.`);
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Não foi possível exportar os vídeos.");
+      setNotice(err instanceof Error ? err.message : "Could not export the videos.");
     } finally {
       setExporting(null);
       setExportStatus(null);
@@ -625,8 +627,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       <div className="grid min-h-[42rem] gap-4 xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
         <Panel className="flex min-h-0 flex-col overflow-hidden">
           <div className="border-b border-white/10 px-3 py-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Momentos marcados</p>
-            <p className="mt-1 text-xs text-slate-400">{match.moments.length} no vídeo</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tagged moments</p>
+            <p className="mt-1 text-xs text-slate-400">{match.moments.length} in the video</p>
             {selectedMoment ? (
               <div className="mt-3 border-t border-white/10 pt-3">
                 <p className="truncate text-[11px] font-medium text-cyan-100" title={selectedMoment.momentType.name}>
@@ -635,6 +637,13 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                 <p className="mt-1 font-mono text-[10px] text-slate-500">
                   {formatPreciseTime(selectedMoment.startTimeSeconds)} – {formatPreciseTime(selectedMoment.endTimeSeconds)}
                 </p>
+                <label className="mt-3 grid gap-1.5">
+                  <span className="text-[10px] uppercase tracking-[.16em] text-slate-500">Export quality</span>
+                  <Select className="h-8 text-xs" value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>
+                    {exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </Select>
+                  <span className="text-[10px] leading-4 text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span>
+                </label>
                 <div className="mt-2 grid gap-2">
                   <Button
                     size="sm"
@@ -644,7 +653,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     onClick={() => void exportSelectedMoment()}
                   >
                     <Download size={14} />
-                    Exportar clip MP4
+                    Export MP4 clip
                   </Button>
                   <Button
                     size="sm"
@@ -654,18 +663,18 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     onClick={() => void exportMomentType()}
                   >
                     <Archive size={14} />
-                    Todos deste tipo ({match.moments.filter((moment) => moment.momentTypeId === selectedMoment.momentTypeId).length})
+                    All of this type ({match.moments.filter((moment) => moment.momentTypeId === selectedMoment.momentTypeId).length})
                   </Button>
                 </div>
                 {exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
               </div>
             ) : (
-              <p className="mt-2 text-[10px] leading-4 text-slate-500">Selecione uma linha para rever ou exportar.</p>
+              <p className="mt-2 text-[10px] leading-4 text-slate-500">Select a row to review or export.</p>
             )}
           </div>
           <div className="max-h-[calc(100vh-16rem)] min-h-0 flex-1 overflow-y-auto">
             {match.moments.length === 0 ? (
-              <p className="p-3 text-xs leading-5 text-slate-500">Os momentos terminados aparecem aqui.</p>
+              <p className="p-3 text-xs leading-5 text-slate-500">Completed moments appear here.</p>
             ) : (
               match.moments.map((moment) => (
                 <button
@@ -711,6 +720,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                   <p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">
                     The file remains only in the browser. The app only stores metadata, times, types, notes and coordinates.
                   </p>
+                  {match.video ? <div className="mt-4 w-full max-w-lg rounded-md border border-cyan-300/25 bg-cyan-300/[.07] p-3 text-left"><p className="text-[10px] font-medium uppercase tracking-[.18em] text-cyan-200/70">Expected video</p><p className="mt-1 truncate text-sm font-medium text-cyan-50">{match.video.fileName}</p><p className="mt-1 text-xs text-slate-400">{formatBytes(match.video.fileSize)} · {formatTime(match.video.durationSeconds)}</p></div> : <div className="mt-4 rounded-md border border-amber-300/20 bg-amber-500/[.06] px-3 py-2 text-xs text-amber-100">No video has been associated with this match yet.</div>}
                   <Button className="mt-5" variant="primary" onClick={() => fileInputRef.current?.click()}>
                     <Upload size={16} />
                     Choose video
@@ -728,7 +738,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                   <Button size="icon" variant="secondary" onClick={() => player.seekBy(-5)} aria-label="Back 5 seconds">
                     <RotateCcw size={17} />
                   </Button>
-                  <Button size="icon" variant="primary" onClick={player.togglePlay} aria-label={player.isPlaying ? "Pausar" : "Reproduzir"}>
+                  <Button size="icon" variant="primary" onClick={player.togglePlay} aria-label={player.isPlaying ? "Pause" : "Play"}>
                     {player.isPlaying ? <Pause size={18} /> : <Play size={18} />}
                   </Button>
                   <Button size="icon" variant="secondary" onClick={() => player.seekBy(5)} aria-label="Forward 5 seconds">
@@ -754,7 +764,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         <aside className="min-w-0">
           <Panel className="overflow-hidden">
             <div className="border-b border-white/10 p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Momentos principais</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Main moments</p>
               <div className="mt-3 grid grid-cols-2 gap-2">
                 {momentTypes.map((type) => {
                   const active = activeMoments.some((moment) => moment.momentTypeId === type.id);
@@ -783,15 +793,15 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
             <div className="hidden">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Submomentos</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Submoments</p>
                 {selectedMoment ? <span className="truncate text-[11px] text-cyan-100">{selectedMoment.momentType.name}</span> : null}
               </div>
               {!selectedMoment ? (
                 <p className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-slate-500">
-                  Termine ou selecione um momento à esquerda para identificar os submomentos.
+                  Complete or select a moment on the left to identify submoments.
                 </p>
               ) : selectedSubMomentTypes.length === 0 ? (
-                <p className="mt-3 text-xs text-slate-500">Não existem submomentos configurados para este momento.</p>
+                <p className="mt-3 text-xs text-slate-500">No submoments are configured for this moment.</p>
               ) : (
                 <div className="mt-3 grid grid-cols-2 gap-2">
                   {selectedSubMomentTypes.map((type) => (
@@ -814,11 +824,11 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               {selectedMoment ? (
                 <div className="mt-4 border-t border-white/10 pt-4">
                   <div className="flex items-center justify-between gap-2">
-                    <FieldLabel>Submomentos registados</FieldLabel>
+                    <FieldLabel>Saved submoments</FieldLabel>
                     <span className="text-[11px] text-slate-500">{selectedMoment.subMoments.length}</span>
                   </div>
                   {selectedMoment.subMoments.length === 0 ? (
-                    <p className="mt-2 text-xs text-slate-500">Ainda não existem submomentos neste momento.</p>
+                    <p className="mt-2 text-xs text-slate-500">There are no submoments in this moment yet.</p>
                   ) : (
                     <div className="mt-2 max-h-36 overflow-y-auto rounded-md border border-white/10">
                       {selectedMoment.subMoments.map((subMoment) => (
@@ -830,7 +840,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                             selectedSubMomentId === subMoment.id && "bg-cyan-300/10 text-cyan-100",
                           )}
                           onClick={() => reviewSubMoment(subMoment)}
-                          title="Ir para este submomento e destacar a sua localização"
+                          title="Go to this submoment"
                         >
                           <Crosshair size={12} className="shrink-0 text-cyan-200" />
                           <span className="min-w-0 flex-1 truncate text-xs">{subMoment.subMomentType.name}</span>
@@ -848,29 +858,29 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                 <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <FieldLabel>Campo</FieldLabel>
-                      <span className="text-[11px] text-slate-500">Marque a zona</span>
+                      <FieldLabel>Field</FieldLabel>
+                      <span className="text-[11px] text-slate-500">Mark the area</span>
                     </div>
                     <TacticalField value={pendingFieldPoint} markers={pendingFieldMarkers} onChange={setPendingFieldPoint} />
                   </div>
                   {requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType) ? (
                     <div>
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <FieldLabel>Baliza</FieldLabel>
-                        <span className="text-[11px] text-slate-500">Marque o destino</span>
+                        <FieldLabel>Goal</FieldLabel>
+                        <span className="text-[11px] text-slate-500">Mark the target</span>
                       </div>
                       <GoalTarget value={pendingGoalPoint} markers={pendingGoalMarkers} onChange={setPendingGoalPoint} />
                     </div>
                   ) : null}
                   <div className="grid grid-cols-2 gap-2">
-                    <Button size="sm" variant="ghost" onClick={cancelPendingSubMoment}>Cancelar</Button>
+                    <Button size="sm" variant="ghost" onClick={cancelPendingSubMoment}>Cancel</Button>
                     <Button
                       size="sm"
                       variant="primary"
                       disabled={!pendingFieldPoint || (requiresGoalLocationForSubMoment(pendingSubMoment.subMomentType) && !pendingGoalPoint) || savingPendingSubMoment}
                       onClick={() => void confirmPendingSubMoment()}
                     >
-                      {savingPendingSubMoment ? "A guardar…" : "Guardar"}
+                      {savingPendingSubMoment ? "Saving…" : "Save"}
                     </Button>
                   </div>
                 </div>
@@ -878,28 +888,28 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                 <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <FieldLabel>Campo</FieldLabel>
+                      <FieldLabel>Field</FieldLabel>
                       <span className="text-[11px] text-slate-500">{selectedFieldMarkers.length} pontos</span>
                     </div>
                     <TacticalField
                       value={null}
                       markers={selectedFieldMarkers}
-                      onChange={() => setNotice("Selecione primeiro um submomento para adicionar uma localização.")}
+                      onChange={() => setNotice("Select a submoment first.")}
                     />
                   </div>
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
-                      <FieldLabel>Baliza</FieldLabel>
+                      <FieldLabel>Goal</FieldLabel>
                       <span className="text-[11px] text-slate-500">{selectedGoalMarkers.length} pontos</span>
                     </div>
                     <GoalTarget
                       value={null}
                       markers={selectedGoalMarkers}
-                      onChange={() => setNotice("Selecione um submomento de finalização para marcar a baliza.")}
+                      onChange={() => setNotice("Select a finishing submoment first.")}
                     />
                   </div>
                   <p className="text-[11px] leading-4 text-slate-500">
-                    Selecione um submomento na lista para ir ao instante e destacar os respetivos pontos.
+                    Select a submoment in the list to jump to its timestamp.
                   </p>
                 </div>
               ) : null}
@@ -911,12 +921,12 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       <div className="space-y-3">
         <Timeline moments={match.moments} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
         <Panel className="flex flex-col gap-4 border-cyan-300/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="font-medium text-white">Edição de submomentos</p><p className="mt-1 text-sm text-slate-400">Depois de marcar os momentos principais, classifique os clips numa área dedicada.</p></div>
-          <Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Editar submomentos <ChevronsRight size={16} /></Button></Link>
+          <div><p className="font-medium text-white">Submoment editing</p><p className="mt-1 text-sm text-slate-400">After tagging the main moments, classify the clips in a dedicated area.</p></div>
+          <Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments <ChevronsRight size={16} /></Button></Link>
         </Panel>
       </div>
 
-      {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">O vídeo terminou</h2><p className="mt-2 text-sm text-slate-400">Os momentos principais ficaram guardados. Pode agora avançar para a identificação dos submomentos.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Continuar aqui</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edição de submomentos</Button></Link></div></Panel></div> : null}
+      {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
 
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">

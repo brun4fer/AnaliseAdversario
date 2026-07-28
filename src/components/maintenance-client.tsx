@@ -10,9 +10,9 @@ type Resource = "seasons" | "clubs" | "competitions";
 type FormState = { name: string; shortName: string; startDate: string; endDate: string; seasonId: string; clubIds: string[] };
 const emptyForm: FormState = { name: "", shortName: "", startDate: "", endDate: "", seasonId: "", clubIds: [] };
 const tabs: { key: Resource; label: string; singular: string }[] = [
-  { key: "seasons", label: "Temporadas", singular: "temporada" },
-  { key: "clubs", label: "Clubes / equipas", singular: "clube" },
-  { key: "competitions", label: "Competições", singular: "competição" },
+  { key: "seasons", label: "Seasons", singular: "season" },
+  { key: "clubs", label: "Clubs / teams", singular: "club" },
+  { key: "competitions", label: "Competitions", singular: "competition" },
 ];
 
 export function MaintenanceClient() {
@@ -54,13 +54,13 @@ export function MaintenanceClient() {
     try {
       await apiFetch(`/api/maintenance/${resource}${editing ? `/${editing.id}` : ""}`, { method: editing ? "PATCH" : "POST", body: JSON.stringify(form) });
       setEditing(null); setForm(emptyForm); await load();
-    } catch (err) { setError(err instanceof Error ? err.message : "Erro ao guardar."); }
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not save the record."); }
   }
 
   async function remove(item: MaintenanceRecord) {
-    if (!confirm(`Eliminar “${item.name}”?`)) return;
+    if (!confirm(`Delete “${item.name}”?`)) return;
     try { await apiFetch(`/api/maintenance/${resource}/${item.id}`, { method: "DELETE" }); await load(); }
-    catch (err) { setError(err instanceof Error ? err.message : "Não foi possível eliminar."); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not delete the record."); }
   }
 
   function toggleClub(id: string) {
@@ -68,23 +68,23 @@ export function MaintenanceClient() {
   }
 
   return <div className="mx-auto max-w-6xl space-y-5">
-    <div><p className="text-xs uppercase tracking-[.24em] text-cyan-200/80">Configuração</p><h1 className="mt-2 text-3xl font-semibold text-white">Manutenção</h1><p className="mt-2 text-sm text-slate-400">Temporadas, competições e respetivos clubes participantes.</p></div>
+    <div><p className="text-xs uppercase tracking-[.24em] text-cyan-200/80">Configuration</p><h1 className="mt-2 text-3xl font-semibold text-white">Maintenance</h1><p className="mt-2 text-sm text-slate-400">Manage seasons, competitions and their participating clubs.</p></div>
     <div className="flex flex-wrap gap-2">{tabs.map((tab) => <Button key={tab.key} variant={resource === tab.key ? "primary" : "secondary"} onClick={() => setResource(tab.key)}>{tab.label}</Button>)}</div>
     {error && <div className="rounded-md border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div>}
     <div className="grid gap-5 lg:grid-cols-[400px_1fr]">
-      <Panel className="p-5"><h2 className="mb-4 font-semibold text-white">{editing ? "Editar" : "Adicionar"} {current.singular}</h2>
+      <Panel className="p-5"><h2 className="mb-4 font-semibold text-white">{editing ? "Edit" : "Add"} {current.singular}</h2>
         <form className="grid gap-4" onSubmit={submit}>
-          <label className="grid gap-2"><FieldLabel>Nome</FieldLabel><TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
-          {resource === "clubs" && <label className="grid gap-2"><FieldLabel>Nome curto</FieldLabel><TextInput value={form.shortName} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></label>}
-          {resource === "seasons" && <><label className="grid gap-2"><FieldLabel>Data de início</FieldLabel><TextInput type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label><label className="grid gap-2"><FieldLabel>Data de fim</FieldLabel><TextInput type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></label></>}
+          <label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
+          {resource === "clubs" && <label className="grid gap-2"><FieldLabel>Short name</FieldLabel><TextInput value={form.shortName} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></label>}
+          {resource === "seasons" && <><label className="grid gap-2"><FieldLabel>Start date</FieldLabel><TextInput type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label><label className="grid gap-2"><FieldLabel>End date</FieldLabel><TextInput type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></label></>}
           {resource === "competitions" && <>
-            <label className="grid gap-2"><FieldLabel>Temporada</FieldLabel><Select value={form.seasonId} onChange={(event) => setForm({ ...form, seasonId: event.target.value })} required><option value="">Selecionar…</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</Select></label>
-            <div className="grid gap-2"><FieldLabel>Clubes participantes</FieldLabel><div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2">{clubs.length === 0 ? <p className="p-2 text-xs text-amber-200/70">Crie primeiro os clubes.</p> : clubs.map((club) => <label key={club.id} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm text-slate-200 hover:bg-white/[.05]"><input type="checkbox" checked={form.clubIds.includes(club.id)} onChange={() => toggleClub(club.id)} className="h-4 w-4 accent-cyan-300" />{club.name}</label>)}</div></div>
+            <label className="grid gap-2"><FieldLabel>Season</FieldLabel><Select value={form.seasonId} onChange={(event) => setForm({ ...form, seasonId: event.target.value })} required><option value="">Select…</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</Select></label>
+            <div className="grid gap-2"><FieldLabel>Participating clubs</FieldLabel><div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2">{clubs.length === 0 ? <p className="p-2 text-xs text-amber-200/70">Create the clubs first.</p> : clubs.map((club) => <label key={club.id} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm text-slate-200 hover:bg-white/[.05]"><input type="checkbox" checked={form.clubIds.includes(club.id)} onChange={() => toggleClub(club.id)} className="h-4 w-4 accent-cyan-300" />{club.name}</label>)}</div></div>
           </>}
-          <div className="flex gap-2"><Button variant="primary"><Plus size={16} />{editing ? "Guardar" : "Adicionar"}</Button>{editing && <Button type="button" onClick={() => { setEditing(null); setForm(emptyForm); }}>Cancelar</Button>}</div>
+          <div className="flex gap-2"><Button variant="primary"><Plus size={16} />{editing ? "Save" : "Add"}</Button>{editing && <Button type="button" onClick={() => { setEditing(null); setForm(emptyForm); }}>Cancel</Button>}</div>
         </form>
       </Panel>
-      <Panel className="divide-y divide-white/10 overflow-hidden">{items.length === 0 ? <p className="p-6 text-sm text-slate-400">Ainda não existem registos.</p> : items.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="font-medium text-white">{item.name}</p><p className="text-xs text-slate-500">{resource === "clubs" ? (item.shortName || "Sem nome curto") : resource === "seasons" ? `${item.startDate?.slice(0, 10) || "—"} — ${item.endDate?.slice(0, 10) || "—"}` : `${seasons.find((season) => season.id === item.seasonId)?.name || "Sem temporada"} · ${item.clubIds?.length || 0} clubes`}</p></div><div className="flex gap-1"><Button size="icon" onClick={() => edit(item)} aria-label="Editar"><Pencil size={15} /></Button><Button size="icon" variant="danger" onClick={() => void remove(item)} aria-label="Eliminar"><Trash2 size={15} /></Button></div></div>)}</Panel>
+      <Panel className="divide-y divide-white/10 overflow-hidden">{items.length === 0 ? <p className="p-6 text-sm text-slate-400">There are no records yet.</p> : items.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="font-medium text-white">{item.name}</p><p className="text-xs text-slate-500">{resource === "clubs" ? (item.shortName || "No short name") : resource === "seasons" ? `${item.startDate?.slice(0, 10) || "—"} — ${item.endDate?.slice(0, 10) || "—"}` : `${seasons.find((season) => season.id === item.seasonId)?.name || "No season"} · ${item.clubIds?.length || 0} clubs`}</p></div><div className="flex gap-1"><Button size="icon" onClick={() => edit(item)} aria-label="Edit"><Pencil size={15} /></Button><Button size="icon" variant="danger" onClick={() => void remove(item)} aria-label="Delete"><Trash2 size={15} /></Button></div></div>)}</Panel>
     </div>
   </div>;
 }

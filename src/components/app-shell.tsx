@@ -11,8 +11,8 @@ import { APP_NAME } from "@/lib/taxonomy";
 const navItems = [
   { href: "/", label: "Dashboard", icon: BarChart3 },
   { href: "/matches/new", label: "New match", icon: Trophy },
-  { href: "/reports", label: "Relatórios", icon: FileBarChart },
-  { href: "/maintenance", label: "Manutenção", icon: Wrench },
+  { href: "/reports", label: "Reports", icon: FileBarChart },
+  { href: "/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 );
               })}
             </nav>
-            <button onClick={() => void logout()} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-white/[0.08] hover:text-white" aria-label="Terminar sessão"><LogOut size={16} /></button>
+            <button onClick={() => void logout()} className="inline-flex h-9 w-9 items-center justify-center rounded-md text-slate-400 hover:bg-white/[0.08] hover:text-white" aria-label="Sign out"><LogOut size={16} /></button>
           </div>
         </div>
       </header>

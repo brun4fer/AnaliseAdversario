@@ -56,7 +56,7 @@ export function readSessionToken(token?: string | null): SessionPayload | null {
 
 export async function requireCurrentUserId() {
   const session = readSessionToken((await cookies()).get(SESSION_COOKIE)?.value);
-  if (!session) throw new Error("Sessão inválida ou expirada.");
+  if (!session) throw new Error("Invalid or expired session.");
   return session.userId;
 }
 

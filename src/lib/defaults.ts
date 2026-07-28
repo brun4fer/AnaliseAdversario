@@ -6,10 +6,6 @@ import type {
 
 const timestamp = "2026-01-01T00:00:00.000Z";
 
-function requiresGoalLocation(code: string) {
-  return code.endsWith("_FINISHING") || code.endsWith("_GOAL") || code.endsWith("_PENALTY");
-}
-
 export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-oo", name: "Offensive Organization", code: "OO", color: "#22c55e", defaultShortcut: "1", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-od", name: "Defensive Organization", code: "DO", color: "#38bdf8", defaultShortcut: "2", createdAt: timestamp, updatedAt: timestamp },
@@ -52,11 +48,7 @@ const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [
   { id: "smt-bp-golo", name: "Goal", code: "SP_GOAL", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
 ];
 
-export const defaultSubMomentTypes: SubMomentTypeRecord[] = defaultSubMomentTypeDefinitions.map((type) => ({
-  ...type,
-  requiresFieldLocation: true,
-  requiresGoalLocation: requiresGoalLocation(type.code),
-}));
+export const defaultSubMomentTypes: SubMomentTypeRecord[] = defaultSubMomentTypeDefinitions;
 
 export const defaultPlayerShortcuts: ShortcutSettingRecord[] = [
   { id: "sc-play", actionType: "player.togglePlay", targetType: "player", targetId: null, key: "Space", createdAt: timestamp, updatedAt: timestamp },

@@ -6,7 +6,7 @@ const valid = (value: string): value is Resource => ["seasons", "clubs", "compet
 
 export async function GET(_: Request, { params }: { params: Promise<{ resource: string }> }) {
   const { resource } = await params;
-  if (!valid(resource)) return Response.json({ error: "Recurso inválido." }, { status: 404 });
+  if (!valid(resource)) return Response.json({ error: "Invalid resource." }, { status: 404 });
   const ownerId = await requireCurrentUserId();
   if (resource === "seasons") return Response.json(await prisma.season.findMany({ where: { ownerId }, orderBy: { name: "desc" } }));
   if (resource === "clubs") return Response.json(await prisma.club.findMany({ where: { ownerId }, orderBy: { name: "asc" } }));
@@ -16,11 +16,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ resource: 
 
 export async function POST(request: Request, { params }: { params: Promise<{ resource: string }> }) {
   const { resource } = await params;
-  if (!valid(resource)) return Response.json({ error: "Recurso inválido." }, { status: 404 });
+  if (!valid(resource)) return Response.json({ error: "Invalid resource." }, { status: 404 });
   const ownerId = await requireCurrentUserId();
   const body = await request.json() as { name?: string; shortName?: string; startDate?: string; endDate?: string; seasonId?: string; clubIds?: string[] };
   const name = body.name?.trim();
-  if (!name) return Response.json({ error: "O nome é obrigatório." }, { status: 400 });
+  if (!name) return Response.json({ error: "Name is required." }, { status: 400 });
   try {
     if (resource === "competitions") {
       const clubIds = [...new Set(body.clubIds || [])];
@@ -28,12 +28,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ res
         prisma.season.findFirst({ where: { id: body.seasonId || "", ownerId }, select: { id: true } }),
         prisma.club.count({ where: { id: { in: clubIds }, ownerId } }),
       ]);
-      if (!season || clubCount !== clubIds.length) return Response.json({ error: "Temporada ou clubes inválidos." }, { status: 400 });
+      if (!season || clubCount !== clubIds.length) return Response.json({ error: "Invalid season or clubs." }, { status: 400 });
     }
     const record = resource === "seasons"
       ? await prisma.season.create({ data: { name, ownerId, startDate: body.startDate ? new Date(body.startDate) : null, endDate: body.endDate ? new Date(body.endDate) : null } })
       : resource === "clubs" ? await prisma.club.create({ data: { name, ownerId, shortName: body.shortName?.trim() || null } })
       : await prisma.competition.create({ data: { name, ownerId, seasonId: body.seasonId || null, clubs: { connect: (body.clubIds || []).map((id) => ({ id })) } } });
     return Response.json(record, { status: 201 });
-  } catch { return Response.json({ error: "Já existe um registo com este nome." }, { status: 409 }); }
+  } catch { return Response.json({ error: "A record with this name already exists." }, { status: 409 }); }
 }

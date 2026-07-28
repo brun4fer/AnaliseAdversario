@@ -73,7 +73,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
     setError(null);
 
     try {
-      const payload = { ...form, title: `Jornada ${form.roundName} - ${form.teamName} vs ${form.opponentName}` };
+      const payload = { ...form, title: `Round ${form.roundName} - ${form.teamName} vs ${form.opponentName}` };
       const saved =
         mode === "create"
           ? await apiFetch<MatchRecord>("/api/matches", { method: "POST", body: JSON.stringify(payload) })
@@ -112,13 +112,13 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
             {error ? <div className="rounded-md border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-100">{error}</div> : null}
 
             <div className="grid gap-4 md:grid-cols-2">
-              <Field name="roundName" label="Jornada" value={form.roundName ?? ""} onChange={setForm} type="number" required />
-              <Choice label="Temporada" value={form.seasonId ?? ""} items={seasons} required onChange={id=>setForm(f=>({...f,seasonId:id,competitionId:"",competition:"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))} />
-              <Choice label="Competição" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))}} />
-              <Choice label="Equipa da casa" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}))}} />
-              <Choice label="Equipa visitante" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}))}} />
-              <Field name="matchDate" label="Data" value={form.matchDate ?? ""} onChange={setForm} type="date" required />
-              <Field name="venue" label="Local" value={form.venue ?? ""} onChange={setForm} />
+              <Field name="roundName" label="Round" value={form.roundName ?? ""} onChange={setForm} type="number" required />
+              <Choice label="Season" value={form.seasonId ?? ""} items={seasons} required onChange={id=>setForm(f=>({...f,seasonId:id,competitionId:"",competition:"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))} />
+              <Choice label="Competition" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))}} />
+              <Choice label="Home team" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}))}} />
+              <Choice label="Away team" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}))}} />
+              <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" required />
+              <Field name="venue" label="Venue" value={form.venue ?? ""} onChange={setForm} />
             </div>
 
             <div className="grid gap-2">
@@ -149,7 +149,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
   );
 }
 
-function Choice({label,value,items,onChange,required=false,disabled=false}:{label:string;value:string;items:MaintenanceRecord[];onChange:(value:string)=>void;required?:boolean;disabled?:boolean}) { return <label className="grid gap-2"><FieldLabel>{label}</FieldLabel><Select value={value} required={required} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">Selecionar…</option>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</Select>{!disabled&&items.length===0?<span className="text-xs text-amber-200/70">Não existem opções associadas. Verifique a área de Manutenção.</span>:null}</label> }
+function Choice({label,value,items,onChange,required=false,disabled=false}:{label:string;value:string;items:MaintenanceRecord[];onChange:(value:string)=>void;required?:boolean;disabled?:boolean}) { return <label className="grid gap-2"><FieldLabel>{label}</FieldLabel><Select value={value} required={required} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">Select…</option>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</Select>{!disabled&&items.length===0?<span className="text-xs text-amber-200/70">No associated options are available. Check the Maintenance area.</span>:null}</label> }
 
 function Field({
   name,
