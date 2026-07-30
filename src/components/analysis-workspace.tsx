@@ -9,6 +9,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
+  Circle,
   Crosshair,
   Download,
   FileVideo,
@@ -20,8 +21,6 @@ import {
   Scissors,
   Settings,
   Trash2,
-  ThumbsDown,
-  ThumbsUp,
   Upload,
   X,
 } from "lucide-react";
@@ -731,8 +730,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
                     <span className="shrink-0 font-mono text-[10px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
                   </button>
-                  <button type="button" className={cn("text-slate-600 hover:text-emerald-300", moment.outcome === "positive" && "text-emerald-400")} onClick={() => void toggleOutcome(moment, "positive")} aria-label="Mark as positive"><ThumbsUp size={13} /></button>
-                  <button type="button" className={cn("text-slate-600 hover:text-red-300", moment.outcome === "negative" && "text-red-400")} onClick={() => void toggleOutcome(moment, "negative")} aria-label="Mark as negative"><ThumbsDown size={13} /></button>
+                  <button type="button" className={cn("text-emerald-950 hover:text-emerald-400", moment.outcome === "positive" && "text-emerald-400")} onClick={() => void toggleOutcome(moment, "positive")} aria-label="Mark as positive" title="Positive"><Circle size={13} className="fill-current" /></button>
+                  <button type="button" className={cn("text-red-950 hover:text-red-400", moment.outcome === "negative" && "text-red-400")} onClick={() => void toggleOutcome(moment, "negative")} aria-label="Mark as negative" title="Negative"><Circle size={13} className="fill-current" /></button>
                   <button type="button" className="text-slate-500 hover:text-cyan-200" onClick={() => setEditingMoment(moment)} aria-label="Edit moment"><Pencil size={13} /></button>
                   <button type="button" className="text-slate-500 hover:text-red-300" onClick={() => void deleteMoment(moment)} aria-label="Delete moment"><Trash2 size={13} /></button>
                 </div>
