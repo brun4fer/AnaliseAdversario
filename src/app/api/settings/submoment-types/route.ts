@@ -4,9 +4,7 @@ import type { SubMomentTypeRecord } from "@/lib/domain";
 
 export async function POST(request: Request) {
   try {
-    const body = await readJson<
-      Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">
-    >(request);
+    const body = await readJson<Pick<SubMomentTypeRecord, "name" | "code">>(request);
     return created(await createSubMomentType(body));
   } catch (error) {
     return handleRouteError(error);

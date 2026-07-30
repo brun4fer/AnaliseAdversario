@@ -12,6 +12,7 @@ export function useVideoPlayer() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRateState] = useState(1);
   const [error, setError] = useState<string | null>(null);
 
   const unload = useCallback(() => {
@@ -87,6 +88,13 @@ export function useVideoPlayer() {
     [currentTime, seekTo],
   );
 
+  const setPlaybackRate = useCallback((rate: number) => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+    setPlaybackRateState(rate);
+  }, []);
+
   const reviewSegment = useCallback(
     (start: number, end: number) => {
       reviewEndRef.current = end;
@@ -131,6 +139,7 @@ export function useVideoPlayer() {
     currentTime,
     duration,
     isPlaying,
+    playbackRate,
     error,
     loadFile,
     unload,
@@ -139,6 +148,7 @@ export function useVideoPlayer() {
     togglePlay,
     seekTo,
     seekBy,
+    setPlaybackRate,
     reviewSegment,
     handleLoadedMetadata,
     handleTimeUpdate,

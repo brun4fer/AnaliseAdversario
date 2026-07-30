@@ -57,6 +57,7 @@ export type MomentRecord = {
   endTimeSeconds: number;
   durationSeconds: number;
   notes: string | null;
+  outcome: "positive" | "negative" | null;
   createdAt: string;
   updatedAt: string;
   momentType: MomentTypeRecord;
@@ -136,6 +137,7 @@ export type CreateMomentInput = {
   startTimeSeconds: number;
   endTimeSeconds: number;
   notes?: string | null;
+  outcome?: "positive" | "negative" | null;
 };
 
 export type UpdateMomentInput = Partial<Omit<CreateMomentInput, "matchId">>;

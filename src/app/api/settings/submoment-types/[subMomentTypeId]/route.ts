@@ -9,9 +9,7 @@ type Context = {
 export async function PATCH(request: Request, context: Context) {
   try {
     const { subMomentTypeId } = await context.params;
-    const body = await readJson<
-      Partial<Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">>
-    >(request);
+    const body = await readJson<Partial<Pick<SubMomentTypeRecord, "name" | "code">>>(request);
     return ok(await updateSubMomentType(subMomentTypeId, body));
   } catch (error) {
     return handleRouteError(error);

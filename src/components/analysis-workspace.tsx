@@ -14,11 +14,14 @@ import {
   FileVideo,
   Goal,
   Pause,
+  Pencil,
   Play,
   RotateCcw,
   Scissors,
   Settings,
   Trash2,
+  ThumbsDown,
+  ThumbsUp,
   Upload,
   X,
 } from "lucide-react";
@@ -86,6 +89,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [videoWarning, setVideoWarning] = useState<VideoWarning | null>(null);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
+  const [seekTime, setSeekTime] = useState("");
   const [pendingSubMoment, setPendingSubMoment] = useState<PendingSubMoment | null>(null);
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
   const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
@@ -94,6 +98,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportQuality, setExportQuality] = useState<ExportQuality>("high");
   const [videoFinished, setVideoFinished] = useState(false);
+  const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
 
   useEffect(() => {
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
@@ -250,6 +255,33 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     },
     [match, upsertMomentInState],
   );
+
+  const updateMoment = useCallback(async (momentId: string, input: Record<string, unknown>) => {
+    const saved = await apiFetch<MomentRecord>(`/api/moments/${momentId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+    upsertMomentInState(saved);
+    setEditingMoment(null);
+    setNotice("Moment updated.");
+  }, [upsertMomentInState]);
+
+  const deleteMoment = useCallback(async (moment: MomentRecord) => {
+    if (!window.confirm(`Delete ${moment.momentType.name} at ${formatPreciseTime(moment.startTimeSeconds)}?`)) return;
+    await apiFetch<void>(`/api/moments/${moment.id}`, { method: "DELETE" });
+    setMatch((current) => current ? {
+      ...current,
+      momentCount: Math.max(0, current.momentCount - 1),
+      moments: current.moments.filter((item) => item.id !== moment.id),
+    } : current);
+    setSelectedMomentId((current) => current === moment.id ? null : current);
+    setEditingMoment((current) => current?.id === moment.id ? null : current);
+    setNotice("Moment deleted.");
+  }, []);
+
+  const toggleOutcome = useCallback(async (moment: MomentRecord, outcome: "positive" | "negative") => {
+    await updateMoment(moment.id, { outcome: moment.outcome === outcome ? null : outcome });
+  }, [updateMoment]);
 
   const toggleMoment = useCallback(
     (momentType: MomentTypeRecord) => {
@@ -505,6 +537,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     player.reviewSegment(moment.startTimeSeconds, moment.endTimeSeconds);
   }
 
+  function goToExactTime() {
+    const seconds = Number(seekTime);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      setNotice("Enter a valid time in seconds.");
+      return;
+    }
+    player.seekTo(seconds);
+    setSeekTime(String(roundSeconds(Math.min(seconds, player.duration || seconds))));
+  }
+
   function reviewSubMoment(subMoment: SubMomentRecord) {
     setSelectedSubMomentId(subMoment.id);
     if (subMoment.timeSeconds !== null) {
@@ -677,20 +719,23 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               <p className="p-3 text-xs leading-5 text-slate-500">Completed moments appear here.</p>
             ) : (
               match.moments.map((moment) => (
-                <button
+                <div
                   key={moment.id}
-                  type="button"
                   className={cn(
                     "flex h-8 w-full items-center gap-2 border-b border-white/[0.06] px-3 text-left transition hover:bg-white/[0.06]",
                     selectedMomentId === moment.id && "bg-cyan-300/10 text-cyan-100",
                   )}
-                  onClick={() => reviewMoment(moment)}
-                  title={`${moment.momentType.name} · ${formatPreciseTime(moment.startTimeSeconds)}`}
                 >
-                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: moment.momentType.color }} />
-                  <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
-                  <span className="shrink-0 font-mono text-[11px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
-                </button>
+                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2" onClick={() => reviewMoment(moment)} title={`${moment.momentType.name} · ${formatPreciseTime(moment.startTimeSeconds)}`}>
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: moment.momentType.color }} />
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
+                    <span className="shrink-0 font-mono text-[10px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
+                  </button>
+                  <button type="button" className={cn("text-slate-600 hover:text-emerald-300", moment.outcome === "positive" && "text-emerald-400")} onClick={() => void toggleOutcome(moment, "positive")} aria-label="Mark as positive"><ThumbsUp size={13} /></button>
+                  <button type="button" className={cn("text-slate-600 hover:text-red-300", moment.outcome === "negative" && "text-red-400")} onClick={() => void toggleOutcome(moment, "negative")} aria-label="Mark as negative"><ThumbsDown size={13} /></button>
+                  <button type="button" className="text-slate-500 hover:text-cyan-200" onClick={() => setEditingMoment(moment)} aria-label="Edit moment"><Pencil size={13} /></button>
+                  <button type="button" className="text-slate-500 hover:text-red-300" onClick={() => void deleteMoment(moment)} aria-label="Delete moment"><Trash2 size={13} /></button>
+                </div>
               ))
             )}
           </div>
@@ -730,6 +775,30 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
             </div>
 
             <div className="border-t border-white/10 bg-pitch-950/90 p-3">
+              <div className="mb-3 grid gap-2">
+                <input
+                  type="range"
+                  min="0"
+                  max={Math.max(player.duration, 0.1)}
+                  step="0.1"
+                  value={Math.min(player.currentTime, player.duration || 0)}
+                  disabled={!player.sourceUrl || !player.duration}
+                  onChange={(event) => player.seekTo(Number(event.target.value))}
+                  aria-label="Video position"
+                  className="h-2 w-full cursor-pointer accent-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  style={{ background: player.duration ? `linear-gradient(to right, #67e8f9 ${(player.currentTime / player.duration) * 100}%, rgba(255,255,255,.14) ${(player.currentTime / player.duration) * 100}%)` : undefined }}
+                />
+                <div className="flex flex-wrap items-end justify-between gap-2">
+                  <span className="text-[11px] text-slate-500">Drag the bar to move through the video.</span>
+                  <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}>
+                    <label className="grid gap-1">
+                      <span className="text-[10px] uppercase tracking-[.15em] text-slate-500">Exact second</span>
+                      <TextInput className="h-8 w-28 font-mono text-xs" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="e.g. 125.5" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} />
+                    </label>
+                    <Button type="submit" size="sm" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go to time</Button>
+                  </form>
+                </div>
+              </div>
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="flex flex-wrap items-center gap-2">
                   <Button size="icon" variant="secondary" onClick={() => player.seekBy(-15)} aria-label="Back 15 seconds">
@@ -747,6 +816,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                   <Button size="icon" variant="secondary" onClick={() => player.seekBy(15)} aria-label="Forward 15 seconds">
                     <ChevronsRight size={17} className="scale-125" />
                   </Button>
+                  <div className="ml-1 flex overflow-hidden rounded-md border border-white/10">
+                    {[1, 2, 4].map((rate) => <button key={rate} type="button" className={cn("h-9 px-2 text-xs transition", player.playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.1]")} onClick={() => player.setPlaybackRate(rate)}>{rate}×</button>)}
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
                   <span className="inline-flex items-center gap-2">
@@ -928,6 +1000,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
       {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
 
+      {editingMoment ? <EditMomentDialog moment={editingMoment} momentTypes={momentTypes} currentTime={player.currentTime} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
+
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">
           {notice}
@@ -1021,6 +1095,14 @@ function Timeline({
   onSelect: (moment: MomentRecord) => void;
 }) {
   const timelineDuration = Math.max(duration, ...moments.map((moment) => moment.endTimeSeconds), 1);
+  const rows = Array.from(
+    moments.reduce((groups, moment) => {
+      const existing = groups.get(moment.momentTypeId);
+      if (existing) existing.moments.push(moment);
+      else groups.set(moment.momentTypeId, { type: moment.momentType, moments: [moment] });
+      return groups;
+    }, new Map<string, { type: MomentTypeRecord; moments: MomentRecord[] }>()),
+  ).map(([, row]) => row);
 
   return (
     <Panel className="p-4">
@@ -1031,33 +1113,66 @@ function Timeline({
         </div>
         <Scissors size={17} className="text-cyan-200" />
       </div>
-      <div className="relative h-20 overflow-hidden rounded-lg border border-white/10 bg-black/20">
-        <div className="absolute inset-x-0 top-1/2 h-px bg-white/15" />
-        {moments.map((moment, index) => {
-          const left = (moment.startTimeSeconds / timelineDuration) * 100;
-          const width = Math.max(0.8, ((moment.endTimeSeconds - moment.startTimeSeconds) / timelineDuration) * 100);
-          const top = 10 + (index % 3) * 20;
-          return (
-            <button
-              key={moment.id}
-              type="button"
-              className="absolute h-4 rounded-full border border-white/20 text-[0px] shadow-sm transition hover:scale-y-125"
-              style={{
-                left: `${left}%`,
-                width: `${width}%`,
-                top,
-                backgroundColor: moment.momentType.color,
-              }}
-              onClick={() => onSelect(moment)}
-              title={`${moment.momentType.code} ${formatPreciseTime(moment.startTimeSeconds)}`}
-            >
-              {moment.momentType.code}
-            </button>
-          );
-        })}
+      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
+        {rows.length === 0 ? <p className="p-4 text-sm text-slate-500">No moments registered.</p> : rows.map((row) => (
+          <div key={row.type.id} className="grid min-h-10 grid-cols-[10rem_minmax(0,1fr)] border-b border-white/[0.07] last:border-b-0">
+            <div className="flex items-center gap-2 border-r border-white/[0.07] px-3">
+              <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.type.color }} />
+              <span className="truncate text-xs text-slate-300" title={row.type.name}>{row.type.name}</span>
+            </div>
+            <div className="relative min-h-10">
+              <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
+              {row.moments.map((moment) => {
+                const left = (moment.startTimeSeconds / timelineDuration) * 100;
+                const width = Math.max(0.8, ((moment.endTimeSeconds - moment.startTimeSeconds) / timelineDuration) * 100);
+                return <button key={moment.id} type="button" className="absolute top-3 h-4 rounded-full border border-white/20 shadow-sm transition hover:scale-y-125" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: row.type.color }} onClick={() => onSelect(moment)} title={`${row.type.code} ${formatPreciseTime(moment.startTimeSeconds)}${moment.outcome ? ` · ${moment.outcome}` : ""}`}><span className={cn("absolute -right-1 -top-1 h-2 w-2 rounded-full ring-1 ring-black", moment.outcome === "positive" ? "bg-emerald-400" : moment.outcome === "negative" ? "bg-red-400" : "hidden")} /></button>;
+              })}
+            </div>
+          </div>
+        ))}
       </div>
     </Panel>
   );
+}
+
+function EditMomentDialog({ moment, momentTypes, currentTime, duration, onPreview, onSave, onClose }: {
+  moment: MomentRecord;
+  momentTypes: MomentTypeRecord[];
+  currentTime: number;
+  duration: number;
+  onPreview: (start: number, end: number) => void;
+  onSave: (momentId: string, input: Record<string, unknown>) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [momentTypeId, setMomentTypeId] = useState(moment.momentTypeId);
+  const [start, setStart] = useState(moment.startTimeSeconds);
+  const [end, setEnd] = useState(moment.endTimeSeconds);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const limit = (value: number) => roundSeconds(Math.max(0, duration ? Math.min(value, duration) : value));
+  const change = (target: "start" | "end", amount: number) => target === "start" ? setStart((value) => limit(value + amount)) : setEnd((value) => limit(value + amount));
+  async function save() {
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+      setError("The end time must be after the start time.");
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try { await onSave(moment.id, { momentTypeId, startTimeSeconds: limit(start), endTimeSeconds: limit(end) }); }
+    catch (err) { setError(err instanceof Error ? err.message : "Could not update the moment."); setSaving(false); }
+  }
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true" aria-label="Edit moment">
+    <Panel className="w-full max-w-xl p-5">
+      <div className="flex items-center justify-between gap-3"><div><p className="text-xs uppercase tracking-[.2em] text-cyan-200/70">Edit moment</p><h2 className="mt-1 text-lg font-semibold text-white">Correct type and clip times</h2></div><Button size="icon" variant="ghost" onClick={onClose} aria-label="Close"><X size={17} /></Button></div>
+      {error ? <p className="mt-4 rounded-md border border-red-400/30 bg-red-500/10 p-2 text-sm text-red-100">{error}</p> : null}
+      <div className="mt-5 grid gap-4">
+        <label className="grid gap-2"><FieldLabel>Type</FieldLabel><Select value={momentTypeId} onChange={(event) => setMomentTypeId(event.target.value)}>{momentTypes.map((type) => <option key={type.id} value={type.id}>{type.code} - {type.name}</option>)}</Select></label>
+        {(["start", "end"] as const).map((target) => { const value = target === "start" ? start : end; const setValue = target === "start" ? setStart : setEnd; return <div key={target} className="grid gap-2"><div className="flex items-center justify-between"><FieldLabel>{target === "start" ? "Start" : "End"}</FieldLabel><span className="font-mono text-xs text-slate-400">{formatPreciseTime(value)}</span></div><TextInput type="number" min="0" max={duration || undefined} step="0.1" value={value} onChange={(event) => setValue(Number(event.target.value))} /><div className="flex flex-wrap gap-1">{[-1, -0.1, 0.1, 1].map((amount) => <Button key={amount} type="button" size="sm" variant="secondary" onClick={() => change(target, amount)}>{amount > 0 ? "+" : ""}{amount}s</Button>)}<Button type="button" size="sm" variant="secondary" onClick={() => setValue(limit(currentTime))}>Use current</Button></div></div>; })}
+        <div className="rounded-md border border-white/10 bg-black/20 p-3 text-sm text-slate-300">Duration: <span className="font-mono text-white">{formatPreciseTime(Math.max(0, end - start))}</span></div>
+      </div>
+      <div className="mt-5 flex flex-wrap justify-end gap-2"><Button variant="secondary" onClick={() => onPreview(start, end)} disabled={end <= start}><Play size={15} />Preview</Button><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" onClick={() => void save()} disabled={saving}>{saving ? "Saving" : "Save changes"}</Button></div>
+    </Panel>
+  </div>;
 }
 
 function MomentListItem({

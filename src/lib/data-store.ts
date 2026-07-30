@@ -302,6 +302,7 @@ function mapMoment(moment: PrismaMomentWithRelations): MomentRecord {
     endTimeSeconds: moment.endTimeSeconds,
     durationSeconds: moment.durationSeconds,
     notes: moment.notes,
+    outcome: moment.outcome as "positive" | "negative" | null,
     createdAt: moment.createdAt.toISOString(),
     updatedAt: moment.updatedAt.toISOString(),
     momentType: mapMomentType(moment.momentType),
@@ -797,6 +798,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
         endTimeSeconds: end,
         durationSeconds: momentDuration(start, end),
         notes: normalizeOptionalText(input.notes),
+        outcome: input.outcome ?? null,
       },
       include: {
         momentType: true,
@@ -822,6 +824,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
     endTimeSeconds: end,
     durationSeconds: momentDuration(start, end),
     notes: normalizeOptionalText(input.notes),
+    outcome: input.outcome ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -856,6 +859,7 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
         endTimeSeconds: end,
         durationSeconds: momentDuration(start, end),
         ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+        ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
       },
       include: {
         momentType: true,
@@ -876,6 +880,9 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
   }
   if (input.momentTypeId !== undefined) {
     moment.momentTypeId = input.momentTypeId;
+  }
+  if (input.outcome !== undefined) {
+    moment.outcome = input.outcome;
   }
   if (input.startTimeSeconds !== undefined) {
     moment.startTimeSeconds = Math.max(0, input.startTimeSeconds);
@@ -1171,7 +1178,7 @@ export async function deleteMomentType(momentTypeId: string) {
 }
 
 export async function createSubMomentType(
-  input: Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">,
+  input: Pick<SubMomentTypeRecord, "name" | "code">,
 ) {
   const timestamp = now();
   const code = input.code.trim().toUpperCase();
@@ -1183,8 +1190,8 @@ export async function createSubMomentType(
         ownerId,
         name: input.name.trim(),
         code,
-        requiresFieldLocation: input.requiresFieldLocation,
-        requiresGoalLocation: input.requiresGoalLocation,
+        requiresFieldLocation: false,
+        requiresGoalLocation: false,
       },
     });
     return mapSubMomentType(type);
@@ -1195,8 +1202,8 @@ export async function createSubMomentType(
     id: id(),
     name: input.name.trim(),
     code,
-    requiresFieldLocation: input.requiresFieldLocation,
-    requiresGoalLocation: input.requiresGoalLocation,
+    requiresFieldLocation: false,
+    requiresGoalLocation: false,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -1206,7 +1213,7 @@ export async function createSubMomentType(
 
 export async function updateSubMomentType(
   subMomentTypeId: string,
-  input: Partial<Pick<SubMomentTypeRecord, "name" | "code" | "requiresFieldLocation" | "requiresGoalLocation">>,
+  input: Partial<Pick<SubMomentTypeRecord, "name" | "code">>,
 ) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
@@ -1215,8 +1222,6 @@ export async function updateSubMomentType(
       data: {
         ...(input.name !== undefined ? { name: input.name.trim() } : {}),
         ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
-        ...(input.requiresFieldLocation !== undefined ? { requiresFieldLocation: input.requiresFieldLocation } : {}),
-        ...(input.requiresGoalLocation !== undefined ? { requiresGoalLocation: input.requiresGoalLocation } : {}),
       },
     });
     return mapSubMomentType(type);
@@ -1232,12 +1237,6 @@ export async function updateSubMomentType(
   }
   if (input.code !== undefined) {
     type.code = input.code.trim().toUpperCase();
-  }
-  if (input.requiresFieldLocation !== undefined) {
-    type.requiresFieldLocation = input.requiresFieldLocation;
-  }
-  if (input.requiresGoalLocation !== undefined) {
-    type.requiresGoalLocation = input.requiresGoalLocation;
   }
   type.updatedAt = now();
   return type;

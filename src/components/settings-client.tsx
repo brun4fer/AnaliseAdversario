@@ -247,8 +247,6 @@ function SubMomentTypesPanel({
   const [newType, setNewType] = useState({
     name: "",
     code: "",
-    requiresFieldLocation: false,
-    requiresGoalLocation: false,
   });
 
   useEffect(() => setDrafts(settings.subMomentTypes), [settings.subMomentTypes]);
@@ -259,8 +257,6 @@ function SubMomentTypesPanel({
       body: JSON.stringify({
         name: type.name,
         code: type.code,
-        requiresFieldLocation: type.requiresFieldLocation,
-        requiresGoalLocation: type.requiresGoalLocation,
       }),
     });
     await onRefresh();
@@ -272,7 +268,7 @@ function SubMomentTypesPanel({
       method: "POST",
       body: JSON.stringify(newType),
     });
-    setNewType({ name: "", code: "", requiresFieldLocation: false, requiresGoalLocation: false });
+    setNewType({ name: "", code: "" });
     await onRefresh();
     onNotice("Submoment type created.");
   }
