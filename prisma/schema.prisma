@@ -86,6 +86,10 @@ model Match {
   homeClubId   String?
   awayClubId   String?
   competitionId String?
+  firstHalfStartSeconds  Float?
+  firstHalfEndSeconds    Float?
+  secondHalfStartSeconds Float?
+  secondHalfEndSeconds   Float?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -188,6 +192,7 @@ model SubMoment {
   goalX           Float?
   goalY           Float?
   notes           String?
+  outcome         String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

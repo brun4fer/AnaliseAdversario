@@ -1,0 +1,5 @@
+ALTER TABLE "Match"
+ADD COLUMN "firstHalfStartSeconds" DOUBLE PRECISION,
+ADD COLUMN "firstHalfEndSeconds" DOUBLE PRECISION,
+ADD COLUMN "secondHalfStartSeconds" DOUBLE PRECISION,
+ADD COLUMN "secondHalfEndSeconds" DOUBLE PRECISION;

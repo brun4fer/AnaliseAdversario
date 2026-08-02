@@ -33,6 +33,7 @@ import { cn } from "@/lib/cn";
 import type {
   CreateSubMomentInput,
   MatchDetail,
+  MatchRecord,
   MomentRecord,
   MomentTypeRecord,
   SettingsPayload,
@@ -69,6 +70,8 @@ type PendingSubMoment = {
   timeSeconds: number;
 };
 
+type PeriodMarkerKey = "firstHalfStartSeconds" | "firstHalfEndSeconds" | "secondHalfStartSeconds" | "secondHalfEndSeconds";
+
 function createTemporaryId() {
   return globalThis.crypto?.randomUUID?.() ?? `active-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
@@ -93,7 +96,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);
   const [pendingGoalPoint, setPendingGoalPoint] = useState<Point | null>(null);
   const [savingPendingSubMoment, setSavingPendingSubMoment] = useState(false);
-  const [exporting, setExporting] = useState<"clip" | "group" | null>(null);
+  const [exporting, setExporting] = useState<"clip" | "group" | "all" | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportQuality, setExportQuality] = useState<ExportQuality>("high");
   const [videoFinished, setVideoFinished] = useState(false);
@@ -108,6 +111,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
   }, [matchId]);
+
 
   useEffect(() => {
     if (!notice) {
@@ -546,6 +550,17 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     setSeekTime(String(roundSeconds(Math.min(seconds, player.duration || seconds))));
   }
 
+  async function setPeriodMarker(key: PeriodMarkerKey) {
+    if (!match || !player.sourceUrl) {
+      setNotice("Select the local match video first.");
+      return;
+    }
+    const seconds = roundSeconds(player.videoRef.current?.currentTime ?? player.currentTime);
+    const saved = await apiFetch<MatchRecord>(`/api/matches/${match.id}`, { method: "PATCH", body: JSON.stringify({ [key]: seconds }) });
+    setMatch((current) => current ? { ...current, ...saved } : current);
+    setNotice(`Match period time saved at ${formatPreciseTime(seconds)}.`);
+  }
+
   function reviewSubMoment(subMoment: SubMomentRecord) {
     setSelectedSubMomentId(subMoment.id);
     if (subMoment.timeSeconds !== null) {
@@ -621,6 +636,38 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
   }
 
+  async function exportAllMoments() {
+    if (!match || match.moments.length === 0) return;
+    if (!player.sourceUrl) {
+      setNotice("Select the local video first.");
+      fileInputRef.current?.click();
+      return;
+    }
+
+    setExporting("all");
+    player.pause();
+    try {
+      const zip = new JSZip();
+      for (let index = 0; index < match.moments.length; index += 1) {
+        const moment = match.moments[index];
+        setExportStatus(`Exporting ${index + 1} of ${match.moments.length}: ${moment.momentType.name}`);
+        const exported = await exportMomentClip({ sourceUrl: player.sourceUrl, match, moment, quality: exportQuality });
+        const folder = moment.momentType.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "moments";
+        zip.file(`${folder}/${String(index + 1).padStart(3, "0")}-${exported.fileName}`, exported.blob);
+      }
+      setExportStatus("Preparing the ZIP file…");
+      const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+      const safeMatch = match.title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "match";
+      downloadBlob(blob, `${safeMatch}-all-${match.moments.length}-moments.zip`);
+      setNotice(`${match.moments.length} moments exported successfully.`);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Could not export all moments.");
+    } finally {
+      setExporting(null);
+      setExportStatus(null);
+    }
+  }
+
   if (loading) {
     return <div className="h-[70vh] animate-pulse rounded-lg border border-white/10 bg-white/[0.04]" />;
   }
@@ -665,11 +712,12 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </div>
       </header>
 
-      <div className="grid min-h-[42rem] gap-4 xl:grid-cols-[15rem_minmax(0,1fr)_22rem]">
-        <Panel className="flex min-h-0 flex-col overflow-hidden">
+      <div className="grid items-start gap-4 xl:grid-cols-[15rem_minmax(0,1fr)_22rem] xl:items-stretch">
+        <div className="relative min-h-48 xl:min-h-0">
+        <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
           <div className="border-b border-white/10 px-3 py-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tagged moments</p>
-            <p className="mt-1 text-xs text-slate-400">{match.moments.length} in the video</p>
+            <div className="flex items-start justify-between gap-2"><div><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tagged moments</p><p className="mt-1 text-xs text-slate-400">{match.moments.length} in the video</p></div><Button size="sm" variant="secondary" className="shrink-0 px-2" disabled={match.moments.length === 0 || Boolean(exporting)} onClick={() => void exportAllMoments()} title="Export all registered moments"><Archive size={14} />{exporting === "all" ? "Exporting" : "Export all"}</Button></div>
+            {exporting === "all" && exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
             {selectedMoment ? (
               <div className="mt-3 border-t border-white/10 pt-3">
                 <p className="truncate text-[11px] font-medium text-cyan-100" title={selectedMoment.momentType.name}>
@@ -713,7 +761,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               <p className="mt-2 text-[10px] leading-4 text-slate-500">Select a row to review or export.</p>
             )}
           </div>
-          <div className="max-h-[calc(100vh-16rem)] min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {match.moments.length === 0 ? (
               <p className="p-3 text-xs leading-5 text-slate-500">Completed moments appear here.</p>
             ) : (
@@ -739,6 +787,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
             )}
           </div>
         </Panel>
+        </div>
 
         <div className="min-w-0">
           <Panel className="overflow-hidden">
@@ -858,6 +907,30 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                       </span>
                     </button>
                   );
+                })}
+              </div>
+            </div>
+
+            <div className="border-b border-white/10 p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Match periods</p>
+              <p className="mt-1 text-[10px] leading-4 text-slate-500">Mark the current video time, then use the saved button to jump to it.</p>
+              <div className="mt-3 grid gap-2">
+                {([
+                  ["firstHalfStartSeconds", "Start 1st half"],
+                  ["firstHalfEndSeconds", "End 1st half"],
+                  ["secondHalfStartSeconds", "Start 2nd half"],
+                  ["secondHalfEndSeconds", "End 2nd half"],
+                ] as [PeriodMarkerKey, string][]).map(([key, label]) => {
+                  const seconds = match[key];
+                  return <div key={key} className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                    <Button size="sm" variant={seconds === null ? "secondary" : "primary"} className="min-w-0 justify-between" onClick={() => seconds === null ? void setPeriodMarker(key) : player.seekTo(seconds)} disabled={!player.sourceUrl}>
+                      <span className="truncate">{label}</span>
+                      <span className="ml-2 shrink-0 font-mono text-[10px]">{seconds === null ? "Mark" : formatPreciseTime(seconds)}</span>
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => void setPeriodMarker(key)} disabled={!player.sourceUrl} aria-label={`Set ${label} to current time`} title="Replace with current time">
+                      Set
+                    </Button>
+                  </div>;
                 })}
               </div>
             </div>

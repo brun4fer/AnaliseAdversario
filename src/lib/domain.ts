@@ -16,6 +16,10 @@ export type MatchRecord = {
   homeClubId: string | null;
   awayClubId: string | null;
   competitionId: string | null;
+  firstHalfStartSeconds: number | null;
+  firstHalfEndSeconds: number | null;
+  secondHalfStartSeconds: number | null;
+  secondHalfEndSeconds: number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -84,6 +88,7 @@ export type SubMomentRecord = {
   goalX: number | null;
   goalY: number | null;
   notes: string | null;
+  outcome: "positive" | "negative" | null;
   createdAt: string;
   updatedAt: string;
   subMomentType: SubMomentTypeRecord;
@@ -116,6 +121,10 @@ export type CreateMatchInput = {
   homeClubId?: string | null;
   awayClubId?: string | null;
   competitionId?: string | null;
+  firstHalfStartSeconds?: number | null;
+  firstHalfEndSeconds?: number | null;
+  secondHalfStartSeconds?: number | null;
+  secondHalfEndSeconds?: number | null;
 };
 
 export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
@@ -151,6 +160,7 @@ export type CreateSubMomentInput = {
   goalX?: number | null;
   goalY?: number | null;
   notes?: string | null;
+  outcome?: "positive" | "negative" | null;
 };
 
 export type UpdateSubMomentInput = Partial<Omit<CreateSubMomentInput, "momentId">>;

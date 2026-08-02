@@ -219,6 +219,10 @@ function mapMatch(match: Match): MatchRecord {
     homeClubId: match.homeClubId,
     awayClubId: match.awayClubId,
     competitionId: match.competitionId,
+    firstHalfStartSeconds: match.firstHalfStartSeconds,
+    firstHalfEndSeconds: match.firstHalfEndSeconds,
+    secondHalfStartSeconds: match.secondHalfStartSeconds,
+    secondHalfEndSeconds: match.secondHalfEndSeconds,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
@@ -286,6 +290,7 @@ function mapSubMoment(subMoment: PrismaSubMomentWithType): SubMomentRecord {
     goalX: subMoment.goalX,
     goalY: subMoment.goalY,
     notes: subMoment.notes,
+    outcome: subMoment.outcome as "positive" | "negative" | null,
     createdAt: subMoment.createdAt.toISOString(),
     updatedAt: subMoment.updatedAt.toISOString(),
     subMomentType: mapSubMomentType(subMoment.subMomentType),
@@ -623,6 +628,10 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     homeClubId: normalizeOptionalText(input.homeClubId),
     awayClubId: normalizeOptionalText(input.awayClubId),
     competitionId: normalizeOptionalText(input.competitionId),
+    firstHalfStartSeconds: input.firstHalfStartSeconds ?? null,
+    firstHalfEndSeconds: input.firstHalfEndSeconds ?? null,
+    secondHalfStartSeconds: input.secondHalfStartSeconds ?? null,
+    secondHalfEndSeconds: input.secondHalfEndSeconds ?? null,
     createdAt,
     updatedAt: createdAt,
   };
@@ -658,6 +667,10 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
         ...(input.homeClubId !== undefined ? { homeClubId: normalizeOptionalText(input.homeClubId) } : {}),
         ...(input.awayClubId !== undefined ? { awayClubId: normalizeOptionalText(input.awayClubId) } : {}),
         ...(input.competitionId !== undefined ? { competitionId: normalizeOptionalText(input.competitionId) } : {}),
+        ...(input.firstHalfStartSeconds !== undefined ? { firstHalfStartSeconds: input.firstHalfStartSeconds } : {}),
+        ...(input.firstHalfEndSeconds !== undefined ? { firstHalfEndSeconds: input.firstHalfEndSeconds } : {}),
+        ...(input.secondHalfStartSeconds !== undefined ? { secondHalfStartSeconds: input.secondHalfStartSeconds } : {}),
+        ...(input.secondHalfEndSeconds !== undefined ? { secondHalfEndSeconds: input.secondHalfEndSeconds } : {}),
       },
     });
     return mapMatch(match);
@@ -695,6 +708,10 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   if (input.homeClubId !== undefined) match.homeClubId = normalizeOptionalText(input.homeClubId);
   if (input.awayClubId !== undefined) match.awayClubId = normalizeOptionalText(input.awayClubId);
   if (input.competitionId !== undefined) match.competitionId = normalizeOptionalText(input.competitionId);
+  if (input.firstHalfStartSeconds !== undefined) match.firstHalfStartSeconds = input.firstHalfStartSeconds;
+  if (input.firstHalfEndSeconds !== undefined) match.firstHalfEndSeconds = input.firstHalfEndSeconds;
+  if (input.secondHalfStartSeconds !== undefined) match.secondHalfStartSeconds = input.secondHalfStartSeconds;
+  if (input.secondHalfEndSeconds !== undefined) match.secondHalfEndSeconds = input.secondHalfEndSeconds;
   match.updatedAt = now();
 
   return match;
@@ -931,6 +948,7 @@ export async function createSubMoment(input: CreateSubMomentInput): Promise<SubM
         goalX: input.goalX ?? null,
         goalY: input.goalY ?? null,
         notes: normalizeOptionalText(input.notes),
+        outcome: input.outcome ?? null,
       },
       include: { subMomentType: true },
     });
@@ -954,6 +972,7 @@ export async function createSubMoment(input: CreateSubMomentInput): Promise<SubM
     goalX: input.goalX ?? null,
     goalY: input.goalY ?? null,
     notes: normalizeOptionalText(input.notes),
+    outcome: input.outcome ?? null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
@@ -980,6 +999,7 @@ export async function updateSubMoment(subMomentId: string, input: UpdateSubMomen
         ...(input.goalX !== undefined ? { goalX: input.goalX } : {}),
         ...(input.goalY !== undefined ? { goalY: input.goalY } : {}),
         ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
+        ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
       },
       include: { subMomentType: true },
     });
@@ -1012,6 +1032,9 @@ export async function updateSubMoment(subMomentId: string, input: UpdateSubMomen
   }
   if (input.notes !== undefined) {
     subMoment.notes = normalizeOptionalText(input.notes);
+  }
+  if (input.outcome !== undefined) {
+    subMoment.outcome = input.outcome;
   }
   subMoment.updatedAt = now();
 
