@@ -1,6 +1,7 @@
 const DATABASE_NAME = "analise-adversario-local-videos";
 const STORE_NAME = "match-videos";
 const VERSION = 1;
+const MAX_PERSISTED_VIDEO_SIZE = 1024 * 1024 * 1024;
 
 type StoredVideo = { matchId: string; file: File; savedAt: number };
 
@@ -23,6 +24,10 @@ function openDatabase() {
 
 export async function rememberMatchVideo(matchId: string, file: File) {
   sessionVideos.set(matchId, file);
+  // A File kept in memory is only a handle to the local file. Copying multi-GB
+  // match videos into IndexedDB is slow, duplicates disk usage and commonly
+  // exceeds browser quotas, so large files stay available for this tab only.
+  if (file.size > MAX_PERSISTED_VIDEO_SIZE) return;
   const database = await openDatabase();
   try {
     await new Promise<void>((resolve, reject) => {

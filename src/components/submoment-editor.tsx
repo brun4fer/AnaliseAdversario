@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, Circle, FileVideo, ListVideo, Pause, Pencil, Play, Plus, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, FileVideo, ListVideo, Pause, Pencil, Play, Plus, Trash2, Upload, X } from "lucide-react";
+import { MomentEditDialog } from "@/components/moment-edit-dialog";
+import { OutcomeButtons } from "@/components/outcome-buttons";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
-import type { MatchDetail, MomentRecord, SettingsPayload, SubMomentRecord, SubMomentTypeRecord } from "@/lib/domain";
+import type { MatchDetail, MomentRecord, SettingsPayload, SubMomentRecord, SubMomentTypeRecord, UpdateMomentInput } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
 import { getSubMomentTypesForMoment } from "@/lib/taxonomy";
@@ -26,6 +28,7 @@ export function SubmomentEditor({ matchId }: { matchId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [restoringVideo, setRestoringVideo] = useState(true);
   const [editingSubmoment, setEditingSubmoment] = useState<SubMomentRecord | null>(null);
+  const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
   const [editTypeId, setEditTypeId] = useState("");
   const [editTime, setEditTime] = useState("");
   const [managingType, setManagingType] = useState<SubMomentTypeRecord | "new" | null>(null);
@@ -84,6 +87,50 @@ export function SubmomentEditor({ matchId }: { matchId: string }) {
     if (video.currentTime < selectedMoment.endTimeSeconds - 0.04) return;
     if (continuous && selectedIndex < moments.length - 1) selectMoment(moments[selectedIndex + 1], true);
     else { video.pause(); setContinuous(false); video.currentTime = selectedMoment.endTimeSeconds; }
+  }
+
+  async function updateMoment(momentId: string, input: UpdateMomentInput) {
+    setError(null);
+    const saved = await apiFetch<MomentRecord>(`/api/moments/${momentId}`, { method: "PATCH", body: JSON.stringify(input) });
+    setMatch((current) => current ? {
+      ...current,
+      moments: current.moments.map((moment) => moment.id === saved.id ? saved : moment),
+    } : current);
+    if (saved.momentTypeId !== filterId) {
+      const next = match?.moments.find((moment) => moment.id !== saved.id && moment.momentTypeId === filterId);
+      setSelectedId(next?.id || null);
+    } else {
+      setSelectedId(saved.id);
+    }
+    setEditingMoment(null);
+  }
+
+  async function toggleMomentOutcome(moment: MomentRecord, outcome: "positive" | "negative") {
+    try {
+      await updateMoment(moment.id, { outcome: moment.outcome === outcome ? null : outcome });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not classify the moment.");
+    }
+  }
+
+  async function deleteMoment(moment: MomentRecord) {
+    if (!confirm(`Delete this moment and its ${moment.subMoments.length} submoment${moment.subMoments.length === 1 ? "" : "s"}?`)) return;
+    setError(null);
+    try {
+      await apiFetch<void>(`/api/moments/${moment.id}`, { method: "DELETE" });
+      const next = moments.find((item) => item.id !== moment.id) || null;
+      setMatch((current) => current ? {
+        ...current,
+        momentCount: Math.max(0, current.momentCount - 1),
+        moments: current.moments.filter((item) => item.id !== moment.id),
+      } : current);
+      setSelectedId(next?.id || null);
+      setEditingMoment(null);
+      setContinuous(false);
+      videoRef.current?.pause();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not delete the moment.");
+    }
   }
 
   function chooseType(type: SubMomentTypeRecord) {
@@ -188,11 +235,12 @@ export function SubmomentEditor({ matchId }: { matchId: string }) {
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{availableSubmoments.map((type) => <div key={type.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
     </Panel>
     {managingType ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">{managingType === "new" ? "Add submoment" : "Edit submoment type"}</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setManagingType(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={typeName} onChange={(event) => setTypeName(event.target.value)} placeholder="Submoment name" /></label><label className="grid gap-2"><FieldLabel>Code</FieldLabel><TextInput value={typeCode} onChange={(event) => setTypeCode(event.target.value.toUpperCase())} placeholder="TYPE_CODE" /></label></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setManagingType(null)}>Cancel</Button><Button variant="primary" disabled={saving || !typeName.trim() || !typeCode.trim()} onClick={() => void saveManagedType()}>{saving ? "Saving…" : "Save"}</Button></div></Panel></div> : null}
-    <div className="grid items-start gap-4 xl:grid-cols-[17rem_minmax(0,1fr)_24rem] xl:items-stretch">
-      <div className="relative min-h-48 xl:min-h-0"><Panel className="overflow-y-auto xl:absolute xl:inset-0"><div className="sticky top-0 border-b border-white/10 bg-pitch-950 p-3 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({moments.length})</div>{moments.length === 0 ? <p className="p-4 text-sm text-slate-400">There are no moments of this type.</p> : moments.map((moment, index) => <button key={moment.id} onClick={() => selectMoment(moment)} className={`flex w-full items-center gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${selectedMoment?.id === moment.id ? "bg-cyan-300/10" : ""}`}><span className="font-mono text-xs text-slate-500">{index + 1}</span><span className="min-w-0 flex-1"><span className="block text-sm text-white">{formatPreciseTime(moment.startTimeSeconds)} – {formatPreciseTime(moment.endTimeSeconds)}</span><span className="text-xs text-cyan-100">{moment.subMoments.length} submoments</span></span></button>)}</Panel></div>
+    <div className="grid items-start gap-4 xl:grid-cols-[21rem_minmax(0,1fr)_26rem] xl:items-stretch">
+      <div className="relative min-h-48 xl:min-h-0"><Panel className="overflow-y-auto xl:absolute xl:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 p-3 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({moments.length})</div>{moments.length === 0 ? <p className="p-4 text-sm text-slate-400">There are no moments of this type.</p> : moments.map((moment, index) => <div key={moment.id} className={`border-b border-white/[.06] p-3 ${selectedMoment?.id === moment.id ? "bg-cyan-300/10" : ""}`}><button onClick={() => selectMoment(moment)} className="flex w-full items-center gap-3 text-left hover:text-cyan-100"><span className="font-mono text-xs text-slate-500">{index + 1}</span><span className="min-w-0 flex-1"><span className="block text-sm text-white">{formatPreciseTime(moment.startTimeSeconds)} – {formatPreciseTime(moment.endTimeSeconds)}</span><span className="text-xs text-cyan-100">{moment.subMoments.length} submoments</span></span></button><div className="mt-2 flex flex-wrap items-center justify-end gap-1"><OutcomeButtons value={moment.outcome} onChange={(outcome) => void toggleMomentOutcome(moment, outcome)} /><Button size="sm" variant="secondary" className="h-7" onClick={() => setEditingMoment(moment)}><Pencil size={12} />Edit</Button><Button size="sm" variant="danger" className="h-7" onClick={() => void deleteMoment(moment)}><Trash2 size={12} />Delete</Button></div></div>)}</Panel></div>
       <div className="space-y-3"><Panel className="overflow-hidden"><div className="relative aspect-video bg-black">{sourceUrl ? <video ref={videoRef} src={sourceUrl} className="h-full w-full" playsInline onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /> : <div className="flex h-full flex-col items-center justify-center px-6 text-center"><FileVideo size={52} className="text-cyan-200" /><p className="mt-3 text-sm text-slate-400">{restoringVideo ? "Restoring the local video…" : "Select the local video for this match."}</p>{!restoringVideo && match.video ? <div className="mt-4 w-full max-w-lg rounded-md border border-cyan-300/25 bg-cyan-300/[.07] p-3 text-left"><p className="text-[10px] font-medium uppercase tracking-[.18em] text-cyan-200/70">Expected video</p><p className="mt-1 truncate text-sm font-medium text-cyan-50">{match.video.fileName}</p><p className="mt-1 text-xs text-slate-400">{formatBytes(match.video.fileSize)} · {formatTime(match.video.durationSeconds)}</p></div> : null}{!restoringVideo ? <Button className="mt-5" variant="primary" onClick={() => inputRef.current?.click()}><Upload size={16} />Choose video</Button> : null}</div>}</div><div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 p-3"><div className="flex gap-2"><Button size="icon" disabled={selectedIndex <= 0} onClick={() => selectMoment(moments[selectedIndex - 1])}><ChevronLeft /></Button><Button size="icon" variant="primary" disabled={!sourceUrl || !selectedMoment} onClick={togglePlayback}>{isPlaying ? <Pause /> : <Play />}</Button><Button size="icon" disabled={selectedIndex < 0 || selectedIndex >= moments.length - 1} onClick={() => selectMoment(moments[selectedIndex + 1])}><ChevronRight /></Button></div><span className="font-mono text-sm text-slate-300">{formatPreciseTime(currentTime)} {continuous ? "· continuous playback" : ""}</span></div></Panel></div>
-      <div className="relative min-h-48 xl:min-h-0"><Panel className="overflow-y-auto p-4 xl:absolute xl:inset-0"><p className="text-xs uppercase tracking-[.18em] text-slate-500">Identification</p>{!selectedMoment ? <p className="mt-4 text-sm text-slate-400">Select a clip.</p> : <><div className="mt-3 grid grid-cols-2 gap-2">{availableSubmoments.map((type) => <Button key={type.id} size="sm" variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button>)}</div>{pendingType && <div className="mt-4 border-t border-white/10 pt-4"><p className="mb-3 text-xs text-slate-400">The submoment will be saved at {formatPreciseTime(currentTime)}.</p><Button className="w-full" variant="primary" disabled={saving} onClick={() => void saveSubmoment()}><Check size={16} />{saving ? "Saving…" : `Save ${pendingType.name}`}</Button></div>}<div className="mt-5 border-t border-white/10 pt-4"><div className="mb-2 flex justify-between"><FieldLabel>Saved</FieldLabel><span className="text-xs text-slate-500">{selectedMoment.subMoments.length}</span></div>{selectedMoment.subMoments.map((sub) => <div key={sub.id} className="flex items-center justify-between gap-2 border-b border-white/[.06] py-2"><div className="min-w-0"><Badge>{sub.subMomentType.name}</Badge><span className="ml-2 text-xs text-slate-500">{sub.timeSeconds === null ? "—" : formatPreciseTime(sub.timeSeconds)}</span></div><div className="flex shrink-0 items-center gap-1"><button type="button" className={sub.outcome === "positive" ? "text-emerald-400" : "text-emerald-950 hover:text-emerald-400"} onClick={() => void toggleSubmomentOutcome(sub, "positive")} aria-label="Mark submoment as positive" title="Positive"><Circle size={13} className="fill-current" /></button><button type="button" className={sub.outcome === "negative" ? "text-red-400" : "text-red-950 hover:text-red-400"} onClick={() => void toggleSubmomentOutcome(sub, "negative")} aria-label="Mark submoment as negative" title="Negative"><Circle size={13} className="fill-current" /></button><Button size="icon" variant="secondary" aria-label="Edit submoment" onClick={() => editSubmoment(sub)}><Pencil size={14} /></Button><Button size="icon" variant="danger" aria-label="Delete submoment" onClick={() => void deleteSubmoment(sub.id)}><Trash2 size={14} /></Button></div></div>)}</div></>}</Panel></div>
+      <div className="relative min-h-48 xl:min-h-0"><Panel className="overflow-y-auto p-4 xl:absolute xl:inset-0"><p className="text-xs uppercase tracking-[.18em] text-slate-500">Identification</p>{!selectedMoment ? <p className="mt-4 text-sm text-slate-400">Select a clip.</p> : <><div className="mt-3 grid grid-cols-2 gap-2">{availableSubmoments.map((type) => <Button key={type.id} size="sm" variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button>)}</div>{pendingType && <div className="mt-4 border-t border-white/10 pt-4"><p className="mb-3 text-xs text-slate-400">The submoment will be saved at {formatPreciseTime(currentTime)}.</p><Button className="w-full" variant="primary" disabled={saving} onClick={() => void saveSubmoment()}><Check size={16} />{saving ? "Saving…" : `Save ${pendingType.name}`}</Button></div>}<div className="mt-5 border-t border-white/10 pt-4"><div className="mb-2 flex justify-between"><FieldLabel>Saved</FieldLabel><span className="text-xs text-slate-500">{selectedMoment.subMoments.length}</span></div>{selectedMoment.subMoments.map((sub) => <div key={sub.id} className="border-b border-white/[.06] py-2"><div className="flex min-w-0 items-center"><Badge>{sub.subMomentType.name}</Badge><span className="ml-2 text-xs text-slate-500">{sub.timeSeconds === null ? "—" : formatPreciseTime(sub.timeSeconds)}</span></div><div className="mt-2 flex flex-wrap items-center justify-end gap-1"><OutcomeButtons value={sub.outcome} onChange={(outcome) => void toggleSubmomentOutcome(sub, outcome)} /><Button size="sm" variant="secondary" className="h-7" onClick={() => editSubmoment(sub)}><Pencil size={12} />Edit</Button><Button size="sm" variant="danger" className="h-7" onClick={() => void deleteSubmoment(sub.id)}><Trash2 size={12} />Delete</Button></div></div>)}</div></>}</Panel></div>
     </div>
+    {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={settings.momentTypes} currentTime={currentTime} duration={videoRef.current?.duration || match.video?.durationSeconds || 0} onPreview={(start) => { if (videoRef.current) { videoRef.current.currentTime = start; void videoRef.current.play(); } }} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
     {editingSubmoment && selectedMoment ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">Edit submoment</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setEditingSubmoment(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Type</FieldLabel><Select value={editTypeId} onChange={(event) => setEditTypeId(event.target.value)}>{availableSubmoments.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><div className="flex justify-between"><FieldLabel>Time in seconds</FieldLabel><span className="font-mono text-xs text-slate-400">{editTime === "" ? "—" : formatPreciseTime(Number(editTime))}</span></div><TextInput type="number" step="0.1" min={selectedMoment.startTimeSeconds} max={selectedMoment.endTimeSeconds} value={editTime} onChange={(event) => setEditTime(event.target.value)} /></label><Button variant="secondary" onClick={() => setEditTime(String(Math.round(currentTime * 10) / 10))}>Use current video time</Button></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setEditingSubmoment(null)}>Cancel</Button><Button variant="primary" disabled={saving} onClick={() => void saveEditedSubmoment()}>{saving ? "Saving…" : "Save changes"}</Button></div></Panel></div> : null}
   </div>;
 }

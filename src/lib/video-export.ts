@@ -22,9 +22,9 @@ type AudioExportResources = {
 export type ExportQuality = "original" | "high" | "standard";
 
 export const exportQualityOptions: { value: ExportQuality; label: string; detail: string }[] = [
-  { value: "original", label: "Original", detail: "Original resolution · 60 FPS · 30 Mbps" },
-  { value: "high", label: "High quality", detail: "Up to 1080p · 50 FPS · 18 Mbps" },
-  { value: "standard", label: "Standard", detail: "Up to 1080p · 30 FPS · 9 Mbps" },
+  { value: "original", label: "Original", detail: "Direct cuts keep the source; exact fallback uses 30 Mbps" },
+  { value: "high", label: "High quality", detail: "Direct cuts keep the source; exact fallback uses 18 Mbps" },
+  { value: "standard", label: "Standard", detail: "Direct cuts keep the source; exact fallback uses 9 Mbps" },
 ];
 
 const qualitySettings: Record<ExportQuality, { maxWidth: number | null; frameRate: number; videoBitsPerSecond: number; audioBitsPerSecond: number }> = {
@@ -453,13 +453,13 @@ function wait(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function buildClipFileName(match: Pick<MatchDetail, "title">, moment: MomentRecord, extension: string) {
+export function buildClipFileName(match: Pick<MatchDetail, "title">, moment: MomentRecord, extension: string) {
   const title = sanitizeFileName(match.title) || "match";
   const time = formatPreciseTime(moment.startTimeSeconds).replace(/[:.]/g, "-");
   return `${title}-${moment.momentType.code}-${time}.${extension}`;
 }
 
-function sanitizeFileName(value: string) {
+export function sanitizeFileName(value: string) {
   return value
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
