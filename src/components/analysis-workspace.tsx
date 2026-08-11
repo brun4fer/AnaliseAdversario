@@ -859,7 +859,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                 <div
                   key={moment.id}
                   className={cn(
-                    "flex min-h-11 w-full items-center gap-2 border-b border-white/[0.06] px-3 py-2 text-left transition hover:bg-white/[0.06]",
+                    "flex min-h-9 w-full items-center gap-1.5 border-b border-white/[0.06] px-2.5 py-1 text-left transition hover:bg-white/[0.06]",
                     selectedMomentId === moment.id && "bg-cyan-300/10 text-cyan-100",
                   )}
                 >
@@ -868,9 +868,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
                     <span className="shrink-0 font-mono text-[10px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
                   </button>
-                  <OutcomeButtons value={moment.outcome} onChange={(outcome) => void toggleOutcome(moment, outcome)} />
-                  <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-2 text-[10px] font-medium text-cyan-100 hover:bg-cyan-300/20" onClick={() => setEditingMoment(moment)} aria-label="Edit moment"><Pencil size={12} />Edit</button>
-                  <button type="button" className="inline-flex h-7 items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-2 text-[10px] font-medium text-red-100 hover:bg-red-500/25" onClick={() => void deleteMoment(moment)} aria-label="Delete moment"><Trash2 size={12} />Delete</button>
+                  <OutcomeButtons compact value={moment.outcome} onChange={(outcome) => void toggleOutcome(moment, outcome)} />
+                  <button type="button" className="inline-flex h-6 items-center gap-1 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-1.5 text-[10px] font-medium text-cyan-100 hover:bg-cyan-300/20" onClick={() => setEditingMoment(moment)} aria-label="Edit moment"><Pencil size={11} />Edit</button>
+                  <button type="button" className="inline-flex h-6 items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-1.5 text-[10px] font-medium text-red-100 hover:bg-red-500/25" onClick={() => void deleteMoment(moment)} aria-label="Delete moment"><Trash2 size={11} />Delete</button>
                 </div>
               ))
             )}

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BarChart3, FileBarChart, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { ArrowLeft, BarChart3, FileBarChart, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
 import { PwaInstallButton } from "@/components/pwa-install-button";
 import { cn } from "@/lib/cn";
@@ -18,6 +18,8 @@ const navItems = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname);
   if (pathname === "/login" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }
@@ -63,7 +65,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6">{children}</main>
+      <main className="mx-auto max-w-[1800px] px-4 py-5 sm:px-6">
+        {pathname !== "/" && !pageAlreadyHasBackButton ? (
+          <button
+            type="button"
+            className="mb-3 inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-xs text-slate-400 transition hover:bg-white/[0.06] hover:text-white"
+            onClick={() => window.history.length > 1 ? router.back() : router.push("/")}
+          >
+            <ArrowLeft size={14} />
+            Back
+          </button>
+        ) : null}
+        {children}
+      </main>
     </div>
   );
 }
