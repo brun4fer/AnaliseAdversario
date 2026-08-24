@@ -4,6 +4,7 @@ import Link from "next/link";
 import JSZip from "jszip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   Archive,
   ChevronsLeft,
   ChevronsRight,
@@ -112,6 +113,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
   useEffect(() => {
     let active = true;
+    setLoading(true);
+    setError(null);
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
       .then(async ([matchPayload, settingsPayload]) => {
         if (!active) return;
@@ -127,8 +130,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         const local = await getRememberedMatchVideo(matchId).catch(() => null);
         if (active && local) player.loadFile(local);
       })
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err: Error) => { if (active) setError(err.message); })
+      .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
   }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -746,7 +749,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="flex min-h-0 flex-col gap-2 xl:h-[calc(100dvh-6.5rem)] xl:overflow-hidden">
       <input
         ref={fileInputRef}
         type="file"
@@ -755,29 +758,20 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         onChange={(event) => { void handleFileSelected(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }}
       />
 
-      <header className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel xl:flex-row xl:items-center xl:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge className="border-cyan-300/20 bg-cyan-300/10 text-cyan-100">Video analysis</Badge>
-            <span className="text-xs text-slate-500">{match.opponentName}</span>
-          </div>
-          <h1 className="mt-2 truncate text-2xl font-semibold text-white">{match.title}</h1>
+      <Panel className="flex shrink-0 items-stretch overflow-hidden">
+        <div className="flex shrink-0 items-center gap-1 border-r border-white/10 px-2">
+          <Link href="/" className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[10px] font-semibold text-slate-400 hover:bg-white/[.06] hover:text-white"><ArrowLeft size={12} />Matches</Link>
+          <Link href={`/matches/${match.id}/edit`} className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-white/[.06] hover:text-white" title="Edit match" aria-label="Edit match"><Settings size={13} /></Link>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>
-            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            {uploading ? `Cancel upload · ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}
-          </Button>
-          <Link href={`/matches/${match.id}/edit`}>
-            <Button variant="secondary">
-              <Settings size={16} />
-              Edit match
-            </Button>
-          </Link>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Main moments">
+          {momentTypes.map((type) => { const active = activeMoments.some((moment) => moment.momentTypeId === type.id); return <button key={type.id} type="button" onClick={() => toggleMoment(type)} title={`${type.name} · ${getShortcutForMomentType(type.id)}`} className={cn("flex h-11 min-w-[6rem] shrink-0 items-center justify-between gap-2 rounded-md border px-2 text-left transition", active ? "border-cyan-200/70 bg-cyan-300/10 shadow-glow" : "border-white/10 bg-white/[.035] hover:bg-white/[.08]")}><span className="min-w-0"><span className="block truncate text-[9px] font-bold" style={{ color: type.color }}>{type.name}</span><span className={cn("mt-0.5 block text-[8px]", active ? "text-cyan-100" : "text-slate-600")}>{active ? "In progress" : "Click to start"}</span></span><kbd className="rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-[9px] text-slate-300">{getShortcutForMomentType(type.id)}</kbd></button>; })}
         </div>
-      </header>
+        <div className="flex shrink-0 items-center border-l border-white/10 px-2">
+          <Button size="sm" className="h-8 whitespace-nowrap" variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{uploading ? `Cancel ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}</Button>
+        </div>
+      </Panel>
 
-      <div className="grid items-start gap-4 xl:grid-cols-[19rem_minmax(0,1fr)_22rem] xl:items-stretch">
+      <div className="grid min-h-0 flex-1 items-stretch gap-2 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <div className="relative min-h-48 xl:min-h-0">
         <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
           <div className="border-b border-white/10 px-3 py-3">
@@ -853,15 +847,15 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </Panel>
         </div>
 
-        <div className="min-w-0">
-          <Panel className="overflow-hidden">
-            <div className="relative aspect-video bg-black">
+        <div className="min-h-0 min-w-0">
+          <Panel className="flex h-full min-h-0 flex-col overflow-hidden">
+            <div className="relative aspect-video shrink-0 bg-black xl:aspect-auto xl:min-h-0 xl:flex-1">
               {player.sourceUrl ? (
                 <video
                   ref={player.videoRef}
                   src={player.sourceUrl}
                   crossOrigin="anonymous"
-                  className="h-full w-full"
+                  className="h-full w-full object-contain"
                   controls={false}
                   playsInline
                   onLoadedMetadata={handleLoadedMetadata}
@@ -887,8 +881,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               )}
             </div>
 
-            <div className="border-t border-white/10 bg-pitch-950/90 p-3">
-              <div className="mb-3 grid gap-2">
+            <div className="shrink-0 border-t border-white/10 bg-pitch-950/90 p-2">
+              <div className="grid gap-1.5">
                 <input
                   type="range"
                   min="0"
@@ -898,55 +892,46 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                   disabled={!player.sourceUrl || !player.duration}
                   onChange={(event) => player.seekTo(Number(event.target.value))}
                   aria-label="Video position"
-                  className="h-2 w-full cursor-pointer accent-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="h-1.5 w-full cursor-pointer accent-cyan-300 disabled:cursor-not-allowed disabled:opacity-40"
                   style={{ background: player.duration ? `linear-gradient(to right, #67e8f9 ${(player.currentTime / player.duration) * 100}%, rgba(255,255,255,.14) ${(player.currentTime / player.duration) * 100}%)` : undefined }}
                 />
-                <div className="flex flex-wrap items-end justify-between gap-2">
-                  <span className="text-[11px] text-slate-500">Drag the bar to move through the video.</span>
-                  <form className="flex items-end gap-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}>
-                    <label className="grid gap-1">
-                      <span className="text-[10px] uppercase tracking-[.15em] text-slate-500">Exact second</span>
-                      <TextInput className="h-8 w-28 font-mono text-xs" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="e.g. 125.5" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} />
-                    </label>
-                    <Button type="submit" size="sm" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go to time</Button>
-                  </form>
-                </div>
               </div>
-              <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Button size="icon" variant="secondary" onClick={() => player.seekBy(-15)} aria-label="Back 15 seconds">
-                    <ChevronsLeft size={17} />
+              <div className="mt-1.5 flex items-center justify-between gap-2 overflow-x-auto">
+                <div className="flex min-w-max items-center gap-1">
+                  <Button size="icon" className="h-8 w-8" variant="secondary" onClick={() => player.seekBy(-15)} aria-label="Back 15 seconds">
+                    <ChevronsLeft size={15} />
                   </Button>
-                  <Button size="icon" variant="secondary" onClick={() => player.seekBy(-5)} aria-label="Back 5 seconds">
-                    <RotateCcw size={17} />
+                  <Button size="icon" className="h-8 w-8" variant="secondary" onClick={() => player.seekBy(-5)} aria-label="Back 5 seconds">
+                    <RotateCcw size={15} />
                   </Button>
-                  <Button size="icon" variant="primary" onClick={player.togglePlay} aria-label={player.isPlaying ? "Pause" : "Play"}>
-                    {player.isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                  <Button size="icon" className="h-8 w-8" variant="primary" onClick={player.togglePlay} aria-label={player.isPlaying ? "Pause" : "Play"}>
+                    {player.isPlaying ? <Pause size={16} /> : <Play size={16} />}
                   </Button>
-                  <Button size="icon" variant="secondary" onClick={() => player.seekBy(5)} aria-label="Forward 5 seconds">
-                    <ChevronsRight size={17} />
+                  <Button size="icon" className="h-8 w-8" variant="secondary" onClick={() => player.seekBy(5)} aria-label="Forward 5 seconds">
+                    <ChevronsRight size={15} />
                   </Button>
-                  <Button size="icon" variant="secondary" onClick={() => player.seekBy(15)} aria-label="Forward 15 seconds">
-                    <ChevronsRight size={17} className="scale-125" />
+                  <Button size="icon" className="h-8 w-8" variant="secondary" onClick={() => player.seekBy(15)} aria-label="Forward 15 seconds">
+                    <ChevronsRight size={15} className="scale-125" />
                   </Button>
-                  <div className="ml-1 flex overflow-hidden rounded-md border border-white/10">
-                    {[1, 2, 4].map((rate) => <button key={rate} type="button" className={cn("h-9 px-2 text-xs transition", player.playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.1]")} onClick={() => player.setPlaybackRate(rate)}>{rate}×</button>)}
+                  <div className="flex overflow-hidden rounded-md border border-white/10">
+                    {[1, 2, 4].map((rate) => <button key={rate} type="button" className={cn("h-8 px-2 text-[10px] transition", player.playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.1]")} onClick={() => player.setPlaybackRate(rate)}>{rate}×</button>)}
                   </div>
+                  <Button size="icon" variant="danger" className="h-8 w-8" disabled={match.moments.length === 0} title="Delete the last recorded moment" aria-label="Delete the last recorded moment" onClick={() => { const last = match.moments[match.moments.length - 1]; if (last) void deleteMoment(last); }}><Trash2 size={14} /></Button>
+                  <div className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" aria-label="Match periods">
+                    {([[
+                      "firstHalfStartSeconds", "1H start", "1H S"
+                    ], ["firstHalfEndSeconds", "1H end", "1H E"], ["secondHalfStartSeconds", "2H start", "2H S"], ["secondHalfEndSeconds", "2H end", "2H E"]] as [PeriodMarkerKey, string, string][]).map(([key, label, short]) => { const seconds = match[key]; return <div key={key} className="flex overflow-hidden rounded-md border border-cyan-300/25"><button type="button" disabled={!player.sourceUrl} title={seconds === null ? `${label}: save current time` : `${label}: go to ${formatTime(seconds)}`} onClick={() => seconds === null ? void setPeriodMarker(key) : player.seekTo(seconds)} className="flex h-8 min-w-[3.5rem] flex-col items-center justify-center bg-cyan-300/[.06] px-1.5 leading-none disabled:opacity-40"><span className="text-[7px] font-bold uppercase tracking-wide text-cyan-200">{short}</span><span className="mt-0.5 font-mono text-[8px] text-slate-300">{seconds === null ? "Set" : formatTime(seconds)}</span></button>{seconds !== null ? <button type="button" disabled={!player.sourceUrl} aria-label={`Replace ${label}`} title={`Replace ${label} with current time`} onClick={() => void setPeriodMarker(key)} className="flex h-8 w-5 items-center justify-center border-l border-cyan-300/20 text-slate-500 hover:text-white"><Clock size={9} /></button> : null}</div>; })}
+                  </div>
+                  <form className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}><TextInput aria-label="Exact second" className="h-8 w-20 font-mono text-[10px]" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="Second" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} /><Button type="submit" size="sm" className="h-8 px-2 text-[10px]" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go</Button></form>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 text-sm text-slate-300">
-                  <span className="inline-flex items-center gap-2">
-                    <Clock size={15} className="text-cyan-200" />
-                    {formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}
-                  </span>
-                  {match.video?.storageStatus === "READY" ? <span className="text-xs text-emerald-200">Video stored in Cloudflare R2</span> : match.video ? <span className="text-xs text-amber-200">Cloud upload required</span> : <span className="text-xs text-slate-500">No saved video</span>}
-                </div>
+                <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs text-white"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span>
               </div>
-              {player.error ? <p className="mt-3 rounded-md border border-red-400/30 bg-red-500/10 p-2 text-sm text-red-100">{player.error}</p> : null}
+              {player.error ? <p className="mt-1.5 rounded-md border border-red-400/30 bg-red-500/10 p-1.5 text-xs text-red-100">{player.error}</p> : null}
             </div>
           </Panel>
         </div>
 
-        <aside className="min-w-0">
+        <aside className="hidden">
           <Panel className="overflow-hidden">
             <div className="border-b border-white/10 p-3">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Main moments</p>
@@ -1129,13 +1114,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </aside>
       </div>
 
-      <div className="space-y-3">
-        <Timeline moments={match.moments} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
-        <Panel className="flex flex-col gap-4 border-cyan-300/20 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div><p className="font-medium text-white">Submoment editing</p><p className="mt-1 text-sm text-slate-400">After tagging the main moments, classify the clips in a dedicated area.</p></div>
-          <Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments <ChevronsRight size={16} /></Button></Link>
-        </Panel>
-      </div>
+      <Panel className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5"><div className="min-w-0"><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-slate-500">Identification</span><span className="ml-2 text-xs font-semibold text-white">Submoments</span></div><Link href={`/analysis/${match.id}/submoments`}><Button size="sm" variant="primary" className="h-8" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={14} /></Button></Link></Panel>
+      <Timeline moments={match.moments} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
 
       {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
 
@@ -1232,31 +1212,27 @@ function Timeline({
   ).map(([, row]) => row);
 
   return (
-    <Panel className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Timeline</p>
-          <h2 className="mt-1 font-semibold text-white">Moments in video</h2>
-        </div>
-        <Scissors size={17} className="text-cyan-200" />
-      </div>
-      <div className="overflow-hidden rounded-lg border border-white/10 bg-black/20">
+    <Panel className="flex shrink-0 flex-col overflow-hidden xl:h-24">
+      <div className="flex shrink-0 items-center justify-between border-b border-white/10 px-2 py-1"><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-slate-500">Timeline</span><Scissors size={12} className="text-cyan-200" /></div>
+      <div className="min-h-0 flex-1 overflow-auto bg-black/20">
+        <div className="min-w-[720px]">
         {rows.length === 0 ? <p className="p-4 text-sm text-slate-500">No moments registered.</p> : rows.map((row) => (
-          <div key={row.type.id} className="grid min-h-10 grid-cols-[10rem_minmax(0,1fr)] border-b border-white/[0.07] last:border-b-0">
-            <div className="flex items-center gap-2 border-r border-white/[0.07] px-3">
+          <div key={row.type.id} className="grid min-h-6 grid-cols-[8rem_minmax(0,1fr)] border-b border-white/[0.07] last:border-b-0">
+            <div className="flex items-center gap-2 border-r border-white/[0.07] px-2 py-1">
               <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: row.type.color }} />
-              <span className="truncate text-xs text-slate-300" title={row.type.name}>{row.type.name}</span>
+              <span className="truncate text-[9px] text-slate-300" title={row.type.name}>{row.type.name}</span>
             </div>
-            <div className="relative min-h-10">
+            <div className="relative min-h-6">
               <div className="absolute inset-x-0 top-1/2 h-px bg-white/10" />
               {row.moments.map((moment) => {
                 const left = (moment.startTimeSeconds / timelineDuration) * 100;
                 const width = Math.max(0.8, ((moment.endTimeSeconds - moment.startTimeSeconds) / timelineDuration) * 100);
-                return <button key={moment.id} type="button" className="absolute top-3 h-4 rounded-full border border-white/20 shadow-sm transition hover:scale-y-125" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: row.type.color }} onClick={() => onSelect(moment)} title={`${row.type.code} ${formatPreciseTime(moment.startTimeSeconds)}${moment.outcome ? ` · ${moment.outcome}` : ""}`}><span className={cn("absolute -right-1 -top-1 h-2 w-2 rounded-full ring-1 ring-black", moment.outcome === "positive" ? "bg-emerald-400" : moment.outcome === "negative" ? "bg-red-400" : "hidden")} /></button>;
+                return <button key={moment.id} type="button" className="absolute top-1/2 h-2.5 -translate-y-1/2 rounded-full border border-white/20 shadow-sm transition hover:h-4" style={{ left: `${left}%`, width: `${width}%`, backgroundColor: row.type.color }} onClick={() => onSelect(moment)} title={`${row.type.code} ${formatPreciseTime(moment.startTimeSeconds)}${moment.outcome ? ` · ${moment.outcome}` : ""}`}><span className={cn("absolute -right-1 -top-1 h-2 w-2 rounded-full ring-1 ring-black", moment.outcome === "positive" ? "bg-emerald-400" : moment.outcome === "negative" ? "bg-red-400" : "hidden")} /></button>;
               })}
             </div>
           </div>
         ))}
+        </div>
       </div>
     </Panel>
   );

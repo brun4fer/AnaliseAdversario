@@ -19,7 +19,7 @@ const navItems = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname);
+  const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname) || pathname.startsWith("/analysis/");
   if (pathname === "/login" || pathname === "/register" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }

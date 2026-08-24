@@ -63,3 +63,26 @@ video {
     linear-gradient(90deg, rgba(34, 197, 94, 0.16), rgba(34, 211, 238, 0.08));
   background-size: 12.5% 100%, 100% 25%, 100% 100%;
 }
+
+@media (min-width: 1280px) {
+  .submoment-layout > :nth-child(2) {
+    min-height: 0;
+  }
+
+  .submoment-layout > :nth-child(2) > * {
+    display: flex;
+    min-height: 0;
+    height: 100%;
+    flex-direction: column;
+  }
+
+  .submoment-layout > :nth-child(2) > * > :first-child {
+    min-height: 0;
+    flex: 1 1 0%;
+    aspect-ratio: auto;
+  }
+
+  .submoment-layout > :nth-child(2) > * > :last-child {
+    flex-shrink: 0;
+  }
+}
