@@ -17,7 +17,7 @@ export function useVideoPlayer() {
 
   const unload = useCallback(() => {
     setSourceUrl((current) => {
-      if (current) {
+      if (current?.startsWith("blob:")) {
         URL.revokeObjectURL(current);
       }
       return null;
@@ -35,6 +35,14 @@ export function useVideoPlayer() {
       unload();
       const url = URL.createObjectURL(nextFile);
       setFile(nextFile);
+      setSourceUrl(url);
+    },
+    [unload],
+  );
+
+  const loadUrl = useCallback(
+    (url: string) => {
+      unload();
       setSourceUrl(url);
     },
     [unload],
@@ -142,6 +150,7 @@ export function useVideoPlayer() {
     playbackRate,
     error,
     loadFile,
+    loadUrl,
     unload,
     play,
     pause,

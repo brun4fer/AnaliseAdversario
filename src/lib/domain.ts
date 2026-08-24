@@ -1,6 +1,7 @@
 export type Id = string;
 
-export type StorageType = "local";
+export type StorageType = "local" | "r2";
+export type VideoStorageStatus = "LOCAL" | "UPLOADING" | "READY" | "FAILED";
 
 export type MatchRecord = {
   id: Id;
@@ -38,6 +39,8 @@ export type VideoRecord = {
   mimeType: string;
   lastModified: string | null;
   storageType: StorageType;
+  storageStatus: VideoStorageStatus;
+  uploadedAt: string | null;
   createdAt: string;
   updatedAt: string;
 };

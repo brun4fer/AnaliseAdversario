@@ -4,7 +4,6 @@ import Link from "next/link";
 import JSZip from "jszip";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
   Archive,
   ChevronsLeft,
   ChevronsRight,
@@ -13,6 +12,7 @@ import {
   Download,
   FileVideo,
   Goal,
+  Loader2,
   Pause,
   Pencil,
   Play,
@@ -43,12 +43,11 @@ import type {
   SubMomentTypeRecord,
   UpdateSubMomentInput,
   UpdateMomentInput,
-  VideoMetadataInput,
-  VideoRecord,
 } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
-import { rememberMatchVideo } from "@/lib/local-video-store";
+import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
+import { getRemoteVideoUrl, uploadMatchVideo } from "@/lib/remote-video-store";
 import { SmartVideoExportSession } from "@/lib/smart-video-export";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
@@ -58,11 +57,6 @@ type ActiveMoment = {
   id: string;
   momentTypeId: string;
   startTimeSeconds: number;
-};
-
-type VideoWarning = {
-  expected: VideoRecord;
-  selected: VideoMetadataInput;
 };
 
 type Point = {
@@ -91,7 +85,7 @@ function createTemporaryId() {
 export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const player = useVideoPlayer();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const pendingFileRef = useRef<File | null>(null);
+  const uploadAbortRef = useRef<AbortController | null>(null);
   const [match, setMatch] = useState<MatchDetail | null>(null);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -100,7 +94,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [activeMoments, setActiveMoments] = useState<ActiveMoment[]>([]);
   const [selectedMomentId, setSelectedMomentId] = useState<string | null>(null);
   const [selectedSubMomentId, setSelectedSubMomentId] = useState<string | null>(null);
-  const [videoWarning, setVideoWarning] = useState<VideoWarning | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
   const [seekTime, setSeekTime] = useState("");
@@ -116,14 +111,26 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [editingSubMoment, setEditingSubMoment] = useState<SubMomentRecord | null>(null);
 
   useEffect(() => {
+    let active = true;
     Promise.all([apiFetch<MatchDetail>(`/api/matches/${matchId}`), apiFetch<SettingsPayload>("/api/settings")])
-      .then(([matchPayload, settingsPayload]) => {
+      .then(async ([matchPayload, settingsPayload]) => {
+        if (!active) return;
         setMatch(matchPayload);
         setSettings(settingsPayload);
+        if (matchPayload.video?.storageStatus === "READY") {
+          const remote = await getRemoteVideoUrl(matchId).catch(() => null);
+          if (active && remote) {
+            player.loadUrl(remote.url);
+            return;
+          }
+        }
+        const local = await getRememberedMatchVideo(matchId).catch(() => null);
+        if (active && local) player.loadFile(local);
       })
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false));
-  }, [matchId]);
+    return () => { active = false; };
+  }, [matchId]); // eslint-disable-line react-hooks/exhaustive-deps
 
 
   useEffect(() => {
@@ -515,7 +522,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
   useKeyboardShortcuts(shortcutBindings, Boolean(settings) && !pendingSubMoment);
 
-  function handleFileSelected(file: File | null) {
+  async function handleFileSelected(file: File | null) {
     if (!file) {
       return;
     }
@@ -525,62 +532,30 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       return;
     }
 
-    pendingFileRef.current = file;
     player.loadFile(file);
-    void rememberMatchVideo(matchId, file).catch(() => setNotice("The video was opened, but it is too large to remain automatically available on other pages."));
-    setNotice("Reading local video metadata.");
-  }
-
-  async function handleLoadedMetadata() {
-    const duration = player.handleLoadedMetadata();
-    const file = pendingFileRef.current;
-
-    if (!file || !match) {
-      return;
-    }
-
-    const metadata: VideoMetadataInput = {
-      fileName: file.name,
-      fileSize: file.size,
-      durationSeconds: roundSeconds(duration),
-      mimeType: file.type || "video/*",
-      lastModified: file.lastModified ? new Date(file.lastModified).toISOString() : null,
-    };
-
-    if (match.video) {
-      const sameVideo =
-        match.video.fileName === metadata.fileName &&
-        match.video.fileSize === metadata.fileSize &&
-        Math.abs(match.video.durationSeconds - metadata.durationSeconds) < 1.5;
-
-      if (!sameVideo) {
-        setVideoWarning({ expected: match.video, selected: metadata });
-        return;
-      }
-
-      setNotice("Video validated against saved metadata.");
-      if (match.moments.length > 0) {
-        setResumePrompt(true);
-      }
-      return;
-    }
-
-    await saveVideoMetadata(metadata);
-  }
-
-  async function saveVideoMetadata(metadata: VideoMetadataInput) {
-    const saved = await apiFetch<VideoRecord>(`/api/matches/${matchId}/video`, {
-      method: "PUT",
-      body: JSON.stringify(metadata),
-    });
-
-    setMatch((current) => (current ? { ...current, video: saved } : current));
-    setVideoWarning(null);
-    setNotice("Video metadata saved. The file remains only in the browser.");
-    if ((match?.moments.length ?? 0) > 0) {
-      setResumePrompt(true);
+    await rememberMatchVideo(matchId, file).catch(() => setNotice("The video opened, but it may need to be selected again for local clip export."));
+    setUploading(true);
+    setUploadProgress(0);
+    const controller = new AbortController();
+    uploadAbortRef.current = controller;
+    try {
+      const result = await uploadMatchVideo(matchId, file, ({ progress, detail }) => {
+        setUploadProgress(progress);
+        setNotice(`${detail} ${Math.round(progress * 100)}%`);
+      }, controller.signal);
+      const savedMatch = await apiFetch<MatchDetail>(`/api/matches/${matchId}`);
+      setMatch(savedMatch);
+      setNotice(result.resumed ? "Video upload resumed and completed successfully." : "Video stored securely in Cloudflare R2.");
+      if (savedMatch.moments.length > 0) setResumePrompt(true);
+    } catch (uploadError) {
+      setNotice(uploadError instanceof Error ? uploadError.message : "The video could not be uploaded.");
+    } finally {
+      if (uploadAbortRef.current === controller) uploadAbortRef.current = null;
+      setUploading(false);
     }
   }
+
+  function handleLoadedMetadata() { player.handleLoadedMetadata(); }
 
   function reviewMoment(moment: MomentRecord) {
     setSelectedMomentId(moment.id);
@@ -777,7 +752,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         type="file"
         accept="video/*"
         className="hidden"
-        onChange={(event) => handleFileSelected(event.target.files?.[0] ?? null)}
+        onChange={(event) => { void handleFileSelected(event.target.files?.[0] ?? null); event.currentTarget.value = ""; }}
       />
 
       <header className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/[0.045] p-4 shadow-panel xl:flex-row xl:items-center xl:justify-between">
@@ -789,9 +764,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           <h1 className="mt-2 truncate text-2xl font-semibold text-white">{match.title}</h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-            <Upload size={16} />
-            Select local video
+          <Button variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>
+            {uploading ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            {uploading ? `Cancel upload · ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}
           </Button>
           <Link href={`/matches/${match.id}/edit`}>
             <Button variant="secondary">
@@ -885,10 +860,11 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                 <video
                   ref={player.videoRef}
                   src={player.sourceUrl}
+                  crossOrigin="anonymous"
                   className="h-full w-full"
                   controls={false}
                   playsInline
-                  onLoadedMetadata={() => void handleLoadedMetadata()}
+                  onLoadedMetadata={handleLoadedMetadata}
                   onTimeUpdate={player.handleTimeUpdate}
                   onPlay={() => player.setIsPlaying(true)}
                   onPause={() => player.setIsPlaying(false)}
@@ -898,14 +874,14 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
               ) : (
                 <div className="flex h-full flex-col items-center justify-center px-6 text-center">
                   <FileVideo className="text-cyan-200" size={56} />
-                  <h2 className="mt-4 text-xl font-semibold text-white">Select the local match video</h2>
+                  <h2 className="mt-4 text-xl font-semibold text-white">Upload the match video</h2>
                   <p className="mt-2 max-w-lg text-sm leading-6 text-slate-400">
-                    The file remains only in the browser. The app only stores metadata, times, types, notes and coordinates.
+                    The video will be stored privately in Cloudflare R2 and will be available on every device signed into this account.
                   </p>
                   {match.video ? <div className="mt-4 w-full max-w-lg rounded-md border border-cyan-300/25 bg-cyan-300/[.07] p-3 text-left"><p className="text-[10px] font-medium uppercase tracking-[.18em] text-cyan-200/70">Expected video</p><p className="mt-1 truncate text-sm font-medium text-cyan-50">{match.video.fileName}</p><p className="mt-1 text-xs text-slate-400">{formatBytes(match.video.fileSize)} · {formatTime(match.video.durationSeconds)}</p></div> : <div className="mt-4 rounded-md border border-amber-300/20 bg-amber-500/[.06] px-3 py-2 text-xs text-amber-100">No video has been associated with this match yet.</div>}
                   <Button className="mt-5" variant="primary" onClick={() => fileInputRef.current?.click()}>
                     <Upload size={16} />
-                    Choose video
+                    {match.video?.storageStatus === "READY" ? "Replace video" : "Choose video"}
                   </Button>
                 </div>
               )}
@@ -962,7 +938,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     <Clock size={15} className="text-cyan-200" />
                     {formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}
                   </span>
-                  {match.video ? <span className="text-xs text-emerald-200">Metadata validated</span> : <span className="text-xs text-slate-500">No saved metadata</span>}
+                  {match.video?.storageStatus === "READY" ? <span className="text-xs text-emerald-200">Video stored in Cloudflare R2</span> : match.video ? <span className="text-xs text-amber-200">Cloud upload required</span> : <span className="text-xs text-slate-500">No saved video</span>}
                 </div>
               </div>
               {player.error ? <p className="mt-3 rounded-md border border-red-400/30 bg-red-500/10 p-2 text-sm text-red-100">{player.error}</p> : null}
@@ -1170,19 +1146,6 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">
           {notice}
         </div>
-      ) : null}
-
-      {videoWarning ? (
-        <VideoMismatchDialog
-          warning={videoWarning}
-          onChooseOther={() => {
-            setVideoWarning(null);
-            player.unload();
-            pendingFileRef.current = null;
-            fileInputRef.current?.click();
-          }}
-          onContinue={() => void saveVideoMetadata(videoWarning.selected)}
-        />
       ) : null}
 
       {resumePrompt ? (
@@ -1424,64 +1387,6 @@ function SubMomentLocationDialog({
           </Button>
         </div>
       </Panel>
-    </div>
-  );
-}
-
-function VideoMismatchDialog({
-  warning,
-  onChooseOther,
-  onContinue,
-}: {
-  warning: VideoWarning;
-  onChooseOther: () => void;
-  onContinue: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <Panel className="max-w-3xl border-amber-300/30 p-5">
-        <div className="flex gap-3">
-          <AlertTriangle className="shrink-0 text-amber-200" size={28} />
-          <div>
-            <h2 className="text-lg font-semibold text-white">This video appears to be different from the video previously used in this analysis.</h2>
-            <p className="mt-2 text-sm text-slate-400">Confirm the metadata before continuing. The video will not be uploaded.</p>
-          </div>
-        </div>
-        <div className="mt-5 grid gap-3 md:grid-cols-2">
-          <VideoMetadataCard title="Expected" metadata={warning.expected} />
-          <VideoMetadataCard title="Selected" metadata={warning.selected} />
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onChooseOther}>
-            Choose another video
-          </Button>
-          <Button variant="primary" onClick={onContinue}>
-            Continue anyway
-          </Button>
-        </div>
-      </Panel>
-    </div>
-  );
-}
-
-function VideoMetadataCard({ title, metadata }: { title: string; metadata: VideoRecord | VideoMetadataInput }) {
-  return (
-    <div className="rounded-lg border border-white/10 bg-white/[0.035] p-3">
-      <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{title}</p>
-      <dl className="mt-3 space-y-2 text-sm">
-        <Row label="Name" value={metadata.fileName} />
-        <Row label="Duration" value={formatPreciseTime(metadata.durationSeconds)} />
-        <Row label="Size" value={formatBytes(metadata.fileSize)} />
-      </dl>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid grid-cols-[5.5rem_1fr] gap-2">
-      <dt className="text-slate-500">{label}</dt>
-      <dd className="min-w-0 truncate text-slate-200">{value}</dd>
     </div>
   );
 }

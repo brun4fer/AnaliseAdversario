@@ -30,7 +30,7 @@ export function DashboardClient() {
     () => ({
       matches: matches.length,
       moments: matches.reduce((sum, match) => sum + match.momentCount, 0),
-      withVideo: matches.filter((match) => match.video).length,
+      withVideo: matches.filter((match) => match.video?.storageStatus === "READY").length,
     }),
     [matches],
   );
@@ -61,7 +61,7 @@ export function DashboardClient() {
               <p className="text-xs font-medium uppercase tracking-[0.28em] text-cyan-200/80">Analysis hub</p>
               <h1 className="mt-2 text-2xl font-semibold text-white sm:text-3xl">Matches and opponents</h1>
               <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
-                Open an analysis, select the local video in the browser and tag tactical moments without uploading the file.
+                Upload each match video once, keep it private in Cloudflare R2 and continue the analysis from any authorised device.
               </p>
             </div>
             <Link href="/matches/new" className="shrink-0">
@@ -141,10 +141,12 @@ export function DashboardClient() {
                 <div className="mt-4 grid gap-2 text-sm text-slate-400">
                   <Info icon={<Calendar size={15} />} value={formatDate(match.matchDate)} />
                   <Info icon={<Clapperboard size={15} />} value={match.competition ?? "Competition not set"} />
-                  {match.video ? (
+                  {match.video?.storageStatus === "READY" ? (
                     <Info icon={<Play size={15} />} value={`${match.video.fileName} - ${formatTime(match.video.durationSeconds)}`} />
+                  ) : match.video?.storageStatus === "UPLOADING" ? (
+                    <Info icon={<Play size={15} />} value="Cloud upload incomplete" />
                   ) : (
-                    <Info icon={<Play size={15} />} value="Local video not validated yet" />
+                    <Info icon={<Play size={15} />} value="No cloud video uploaded yet" />
                   )}
                 </div>
               </div>

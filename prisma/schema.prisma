@@ -110,21 +110,33 @@ model Match {
 }
 
 model Video {
-  id              String   @id @default(cuid())
+  id              String             @id @default(cuid())
   matchId         String
   fileName        String
   fileSize        BigInt
   durationSeconds Float
   mimeType        String
   lastModified    DateTime?
-  storageType     String   @default("local")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  storageType     String             @default("local")
+  storageKey      String?            @unique
+  storageStatus   VideoStorageStatus @default(LOCAL)
+  uploadId        String?
+  etag            String?
+  uploadedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
 
   match   Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   moments Moment[]
 
   @@index([matchId])
+}
+
+enum VideoStorageStatus {
+  LOCAL
+  UPLOADING
+  READY
+  FAILED
 }
 
 model MomentType {

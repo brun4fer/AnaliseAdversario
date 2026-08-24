@@ -10,6 +10,7 @@ import type { MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMo
 import { type ExportDirectory, isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
+import { getRemoteVideoUrl } from "@/lib/remote-video-store";
 import { SmartVideoExportSession } from "@/lib/smart-video-export";
 import { getSubMomentTypesForMoment } from "@/lib/taxonomy";
 import { formatPreciseTime } from "@/lib/time";
@@ -64,7 +65,7 @@ export function ReportsClient() {
     return () => { cancelled = true; };
   }, [selectedIds]);
 
-  useEffect(() => () => { if (playingUrlRef.current) URL.revokeObjectURL(playingUrlRef.current); }, []);
+  useEffect(() => () => { if (playingUrlRef.current?.startsWith("blob:")) URL.revokeObjectURL(playingUrlRef.current); }, []);
 
   const teamNames = useMemo(() => [...new Set(matches.flatMap((match) => [match.teamName, match.opponentName]).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)), [matches]);
   const visibleMatches = useMemo(() => matches.filter((match) => !teamFilter || match.teamName === teamFilter || match.opponentName === teamFilter), [matches, teamFilter]);
@@ -85,15 +86,20 @@ export function ReportsClient() {
   async function openClip(index: number, autoplay = true) {
     const clip = clips[index]; if (!clip) return;
     advancingRef.current = true;
-    const file = await getReportVideo(clip.match.id);
-    if (!file) { setNotice(`The video for “${clip.match.title}” is not available in this browser. Select the local video first.`); setContinuous(false); advancingRef.current = false; return; }
-    if (playingUrlRef.current) URL.revokeObjectURL(playingUrlRef.current);
-    const url = URL.createObjectURL(file); playingUrlRef.current = url; setPlaying({ index, url, autoplay }); setNotice(null);
+    const remote = clip.match.video?.storageStatus === "READY" ? await getRemoteVideoUrl(clip.match.id).catch(() => null) : null;
+    let url = remote?.url || null;
+    if (!url) {
+      const file = await getReportVideo(clip.match.id);
+      if (file) url = URL.createObjectURL(file);
+    }
+    if (!url) { setNotice(`The video for “${clip.match.title}” is not available. Upload it from the analysis page first.`); setContinuous(false); advancingRef.current = false; return; }
+    if (playingUrlRef.current?.startsWith("blob:")) URL.revokeObjectURL(playingUrlRef.current);
+    playingUrlRef.current = url; setPlaying({ index, url, autoplay }); setNotice(null);
   }
 
   function clearReportPlayback() {
     stopPlayback();
-    if (playingUrlRef.current) URL.revokeObjectURL(playingUrlRef.current);
+    if (playingUrlRef.current?.startsWith("blob:")) URL.revokeObjectURL(playingUrlRef.current);
     playingUrlRef.current = null;
     setPlaying(null);
   }
@@ -156,19 +162,21 @@ export function ReportsClient() {
 
   async function requestOperation(operation: PendingOperation) {
     if (clips.length === 0) return;
+    if (operation === "play") {
+      startPlayback();
+      return;
+    }
     let exportDirectory: ExportDirectory | null = null;
-    if (operation === "export") {
-      try {
-        exportDirectory = await pickExportDirectory();
-        pendingExportDirectoryRef.current = exportDirectory;
-        setNotice(exportDirectory
-          ? `Destination selected: ${exportDirectory.name}. Checking the source video...`
-          : "Checking the source video before preparing the ZIP...");
-      } catch (error) {
-        if (isExportPickerCancellation(error)) return;
-        setNotice(error instanceof Error ? error.message : "Could not open the destination folder.");
-        return;
-      }
+    try {
+      exportDirectory = await pickExportDirectory();
+      pendingExportDirectoryRef.current = exportDirectory;
+      setNotice(exportDirectory
+        ? `Destination selected: ${exportDirectory.name}. Checking the source video...`
+        : "Checking the source video before preparing the ZIP...");
+    } catch (error) {
+      if (isExportPickerCancellation(error)) return;
+      setNotice(error instanceof Error ? error.message : "Could not open the destination folder.");
+      return;
     }
     setCheckingVideos(true); setVideoPreparationError(null);
     try {
@@ -181,8 +189,7 @@ export function ReportsClient() {
         setNotice(null);
         return;
       }
-      if (operation === "play") startPlayback();
-      else await exportReport(exportDirectory);
+      await exportReport(exportDirectory);
     } catch (error) {
       pendingExportDirectoryRef.current = null;
       setNotice(error instanceof Error ? error.message : "Could not prepare the videos for export.");
@@ -308,7 +315,7 @@ export function ReportsClient() {
         <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
         <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedIds.length} matches selected</p></div><div className="flex flex-wrap gap-2"><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={clips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : "Export clips"}</Button></div></Panel>
         {playing && clips[playing.index] ? <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-          <Panel className="self-start overflow-hidden"><div className="aspect-video bg-black"><video key={playing.url} ref={videoRef} src={playing.url} className="h-full w-full" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div><div className="flex items-center justify-between gap-3 border-t border-white/10 p-3"><div className="min-w-0"><p className="truncate text-sm text-white">{clips[playing.index].match.title}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div><Button size="icon" variant="primary" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause /> : <Play />}</Button></div></Panel>
+          <Panel className="self-start overflow-hidden"><div className="aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div><div className="flex items-center justify-between gap-3 border-t border-white/10 p-3"><div className="min-w-0"><p className="truncate text-sm text-white">{clips[playing.index].match.title}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div><Button size="icon" variant="primary" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause /> : <Play />}</Button></div></Panel>
           <div className="relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={`${clip.match.id}-${clip.moment.id}`} clip={clip} active={playing?.index === index} compact onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
         </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one match to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={`${clip.match.id}-${clip.moment.id}`} clip={clip} active={false} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
       </div>

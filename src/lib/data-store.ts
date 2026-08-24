@@ -34,6 +34,7 @@ import type {
 } from "@/lib/domain";
 import { hasDatabaseUrl, prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
+import { abortMultipartUpload, deleteR2Object } from "@/lib/r2";
 
 type MemoryMoment = Omit<MomentRecord, "momentType" | "subMoments">;
 type MemorySubMoment = Omit<SubMomentRecord, "subMomentType">;
@@ -237,7 +238,9 @@ function mapVideo(video: Video): VideoRecord {
     durationSeconds: video.durationSeconds,
     mimeType: video.mimeType,
     lastModified: video.lastModified?.toISOString() ?? null,
-    storageType: "local",
+    storageType: video.storageType === "r2" ? "r2" : "local",
+    storageStatus: video.storageStatus,
+    uploadedAt: video.uploadedAt?.toISOString() ?? null,
     createdAt: video.createdAt.toISOString(),
     updatedAt: video.updatedAt.toISOString(),
   };
@@ -720,7 +723,13 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
 export async function deleteMatch(matchId: string) {
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
-    await prisma.match.delete({ where: { id: matchId, ownerId } });
+    const match = await prisma.match.findFirst({ where: { id: matchId, ownerId }, include: { videos: true } });
+    if (!match) throw new Error("Match not found.");
+    for (const video of match.videos) {
+      if (video.storageKey && video.uploadId) await abortMultipartUpload(video.storageKey, video.uploadId).catch(() => undefined);
+      if (video.storageKey) await deleteR2Object(video.storageKey);
+    }
+    await prisma.match.delete({ where: { id: match.id } });
     return;
   }
 
@@ -784,6 +793,8 @@ export async function upsertVideoMetadata(matchId: string, input: VideoMetadataI
     mimeType: input.mimeType,
     lastModified: lastModified?.toISOString() ?? null,
     storageType: "local",
+    storageStatus: "LOCAL",
+    uploadedAt: null,
     createdAt: timestamp,
     updatedAt: timestamp,
   };
