@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname);
-  if (pathname === "/login" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
+  if (pathname === "/login" || pathname === "/register" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }
 

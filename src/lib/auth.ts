@@ -25,6 +25,13 @@ export function verifyPassword(password: string, stored: string) {
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
+export function passwordValidationError(password: string) {
+  if (password.length < 8 || !/[A-Z]/.test(password) || !/[a-z]/.test(password) || !/\d/.test(password)) {
+    return "The password must contain at least 8 characters, including uppercase, lowercase and a number.";
+  }
+  return null;
+}
+
 export async function ensureInitialUsers() {
   for (const entry of temporaryUsers) {
     const found = await prisma.user.findFirst({ where: { username: { equals: entry.username, mode: "insensitive" } } });

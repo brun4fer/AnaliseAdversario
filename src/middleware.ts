@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
 const COOKIE = "analise_session";
-const publicPaths = ["/login", "/api/auth/login"];
+const authPages = ["/login", "/register"];
+const publicApiPaths = ["/api/auth/login", "/api/auth/register"];
 
 function decodeSecret(value: string) { return new TextEncoder().encode(value); }
 function base64url(bytes: ArrayBuffer) { return btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_"); }
@@ -21,8 +22,12 @@ async function validSession(token: string | undefined) {
 
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
-  if (publicPaths.some((item) => path === item) || path.startsWith("/_next") || path.includes(".")) return NextResponse.next();
+  if (path.startsWith("/_next") || path.includes(".") || publicApiPaths.includes(path)) return NextResponse.next();
   const session = await validSession(request.cookies.get(COOKIE)?.value);
+  if (authPages.includes(path)) {
+    if (!session) return NextResponse.next();
+    return NextResponse.redirect(new URL(session.mustChangePassword ? "/change-password" : "/", request.url));
+  }
   if (!session) {
     if (path.startsWith("/api/")) return NextResponse.json({ error: "Invalid or expired session." }, { status: 401 });
     const url = new URL("/login", request.url); url.searchParams.set("next", path); return NextResponse.redirect(url);
@@ -31,7 +36,6 @@ export async function middleware(request: NextRequest) {
     if (path.startsWith("/api/")) return NextResponse.json({ error: "You must change your password before continuing." }, { status: 403 });
     return NextResponse.redirect(new URL("/change-password", request.url));
   }
-  if (path === "/login") return NextResponse.redirect(new URL("/", request.url));
   return NextResponse.next();
 }
 
