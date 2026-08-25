@@ -44,6 +44,8 @@ type ExportMomentInput = {
 // Only remux when the saved mark is effectively on the keyframe. Otherwise an
 // exact WebCodecs trim is safer than silently moving a football event boundary.
 const DIRECT_CUT_TOLERANCE_SECONDS = 0.04;
+const WEBCODECS_STALL_TIMEOUT_MS = 45_000;
+const WEBCODECS_CANCEL_GRACE_MS = 5_000;
 
 const transcodeSettings: Record<ExportQuality, { videoBitrate: number; audioBitrate: number }> = {
   original: { videoBitrate: 30_000_000, audioBitrate: 256_000 },
@@ -52,16 +54,22 @@ const transcodeSettings: Record<ExportQuality, { videoBitrate: number; audioBitr
 };
 
 export class SmartVideoExportSession {
+  private readonly source: File | string;
   private readonly input: Input;
   private videoTrackPromise: Promise<InputVideoTrack | null> | null = null;
   private audioTrackPromise: Promise<InputAudioTrack | null> | null = null;
 
   constructor(source: File | string) {
-    this.input = new Input({
+    this.source = source;
+    this.input = this.createInput();
+  }
+
+  private createInput() {
+    return new Input({
       formats: ALL_FORMATS,
-      source: typeof source === "string"
-        ? new UrlSource(source, { maxCacheSize: 64 * 1024 * 1024, parallelism: 2 })
-        : new BlobSource(source),
+      source: typeof this.source === "string"
+        ? new UrlSource(this.source, { maxCacheSize: 64 * 1024 * 1024, parallelism: 2 })
+        : new BlobSource(this.source),
     });
   }
 
@@ -99,6 +107,14 @@ export class SmartVideoExportSession {
     try {
       return await this.exportWithWebCodecs(match, moment, quality, onStatus);
     } catch (error) {
+      if (error instanceof WebCodecsStallError) {
+        onStatus?.("The exact exporter stopped responding. Retrying with software encoding...");
+        try {
+          return await this.exportWithWebCodecs(match, moment, quality, onStatus, "prefer-software");
+        } catch (retryError) {
+          console.info("The software WebCodecs retry was not possible. Trying compatibility mode.", retryError);
+        }
+      }
       console.info("WebCodecs export was not possible. Trying compatibility mode.", error);
       if (!sourceUrlFallback) {
         throw normalizeExportError(error);
@@ -237,55 +253,111 @@ export class SmartVideoExportSession {
     moment: MomentRecord,
     quality: ExportQuality,
     onStatus?: (status: string) => void,
+    hardwareAcceleration: HardwareAcceleration = "no-preference",
   ): Promise<SmartExportResult> {
     if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") {
       throw new Error("WebCodecs is not available in this browser.");
     }
 
-    const target = new BufferTarget();
-    const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
-    const settings = transcodeSettings[quality];
-    const start = Math.max(0, moment.startTimeSeconds);
-    const end = Math.max(start + 0.1, moment.endTimeSeconds);
-    const conversion = await Conversion.init({
-      input: this.input,
-      output,
-      tracks: "primary",
-      trim: { start, end },
-      video: {
-        codec: "avc",
-        bitrate: settings.videoBitrate,
-        keyFrameInterval: 2,
-        hardwareAcceleration: "no-preference",
-      },
-      audio: {
-        codec: "aac",
-        bitrate: settings.audioBitrate,
-      },
-      showWarnings: false,
-    });
+    // A fresh input isolates every exact cut. This prevents a stalled browser
+    // decoder/encoder from poisoning the remaining clips in a large batch.
+    const conversionInput = this.createInput();
+    try {
+      const target = new BufferTarget();
+      const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
+      const settings = transcodeSettings[quality];
+      const start = Math.max(0, moment.startTimeSeconds);
+      const end = Math.max(start + 0.1, moment.endTimeSeconds);
+      const conversion = await Conversion.init({
+        input: conversionInput,
+        output,
+        tracks: "primary",
+        trim: { start, end },
+        video: {
+          codec: "avc",
+          bitrate: settings.videoBitrate,
+          keyFrameInterval: 2,
+          hardwareAcceleration,
+        },
+        audio: {
+          codec: "aac",
+          bitrate: settings.audioBitrate,
+        },
+        showWarnings: false,
+      });
 
-    if (!conversion.isValid) {
-      const reasons = [...new Set(conversion.discardedTracks.map((item) => item.reason))].join(", ");
-      throw new Error(`WebCodecs cannot export this video${reasons ? ` (${reasons})` : ""}.`);
+      if (!conversion.isValid) {
+        const reasons = [...new Set(conversion.discardedTracks.map((item) => item.reason))].join(", ");
+        throw new Error(`WebCodecs cannot export this video${reasons ? ` (${reasons})` : ""}.`);
+      }
+
+      await executeConversionWithWatchdog(conversion, (progress) => {
+        onStatus?.(`Exact cut with WebCodecs: ${Math.min(100, Math.round(progress * 100))}%`);
+      });
+
+      if (!target.buffer || target.buffer.byteLength === 0) {
+        throw new Error("WebCodecs finished without video data.");
+      }
+
+      return {
+        blob: new Blob([target.buffer], { type: "video/mp4" }),
+        fileName: buildClipFileName(match, moment, "mp4"),
+        mimeType: "video/mp4",
+        mode: "webcodecs",
+      };
+    } finally {
+      conversionInput.dispose();
     }
-
-    conversion.onProgress = (progress) => {
-      onStatus?.(`Exact cut with WebCodecs: ${Math.min(100, Math.round(progress * 100))}%`);
-    };
-    await conversion.execute();
-
-    if (!target.buffer || target.buffer.byteLength === 0) {
-      throw new Error("WebCodecs finished without video data.");
-    }
-
-    return {
-      blob: new Blob([target.buffer], { type: "video/mp4" }),
-      fileName: buildClipFileName(match, moment, "mp4"),
-      mimeType: "video/mp4",
-      mode: "webcodecs",
-    };
   }
+}
+
+class WebCodecsStallError extends Error {
+  constructor() {
+    super("WebCodecs stopped making progress.");
+    this.name = "WebCodecsStallError";
+  }
+}
+
+async function executeConversionWithWatchdog(
+  conversion: Conversion,
+  onProgress: (progress: number) => void,
+) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let rejectStall: ((error: Error) => void) | null = null;
+
+  const stalled = new Promise<never>((_, reject) => {
+    rejectStall = reject;
+  });
+  const armWatchdog = () => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => rejectStall?.(new WebCodecsStallError()), WEBCODECS_STALL_TIMEOUT_MS);
+  };
+
+  conversion.onProgress = (progress) => {
+    armWatchdog();
+    onProgress(progress);
+  };
+  armWatchdog();
+
+  const execution = conversion.execute();
+  try {
+    await Promise.race([execution, stalled]);
+  } catch (error) {
+    // Do not let a browser encoder that stopped responding block the full
+    // export. Give Mediabunny a short window to release its resources.
+    await Promise.race([
+      conversion.cancel().catch(() => undefined),
+      wait(WEBCODECS_CANCEL_GRACE_MS),
+    ]);
+    void execution.catch(() => undefined);
+    throw error;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
+function wait(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 }
 
 type PacketCopyInput = {
