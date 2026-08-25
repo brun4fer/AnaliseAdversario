@@ -594,22 +594,32 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
   }
 
+  async function getExportVideo() {
+    if (player.file && player.sourceUrl) {
+      return { source: player.file as File | string, url: player.sourceUrl };
+    }
+    if (!match || match.video?.storageStatus !== "READY") return null;
+    const remote = await getRemoteVideoUrl(match.id).catch(() => null);
+    return remote ? { source: remote.url as File | string, url: remote.url } : null;
+  }
+
   async function exportSelectedMoment() {
     if (!selectedMoment || !match) {
       return;
     }
-    if (!player.sourceUrl || !player.file) {
-      setNotice("Select the local video first.");
+    const exportVideo = await getExportVideo();
+    if (!exportVideo) {
+      setNotice("The cloud video is not available. Select the local video to continue.");
       fileInputRef.current?.click();
       return;
     }
 
     setExporting("clip");
     player.pause();
-    const session = new SmartVideoExportSession(player.file);
+    const session = new SmartVideoExportSession(exportVideo.source);
     try {
       const exported = await session.exportMoment({
-        sourceUrlFallback: player.sourceUrl,
+        sourceUrlFallback: exportVideo.url,
         match,
         moment: selectedMoment,
         quality: exportQuality,
@@ -630,8 +640,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     if (!selectedMoment || !match) {
       return;
     }
-    if (!player.sourceUrl || !player.file) {
-      setNotice("Select the local video first.");
+    const exportVideo = await getExportVideo();
+    if (!exportVideo) {
+      setNotice("The cloud video is not available. Select the local video to continue.");
       fileInputRef.current?.click();
       return;
     }
@@ -647,7 +658,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
     setExporting("group");
     player.pause();
-    const session = new SmartVideoExportSession(player.file);
+    const session = new SmartVideoExportSession(exportVideo.source);
     try {
       const zip = directory ? null : new JSZip();
       const safeType = selectedMoment.momentType.name
@@ -659,7 +670,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         const moment = moments[index];
         setExportStatus(`Exporting ${index + 1} of ${moments.length}: ${moment.momentType.name}`);
         const exported = await session.exportMoment({
-          sourceUrlFallback: player.sourceUrl,
+          sourceUrlFallback: exportVideo.url,
           match,
           moment,
           quality: exportQuality,
@@ -686,8 +697,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
   async function exportAllMoments() {
     if (!match || match.moments.length === 0) return;
-    if (!player.sourceUrl || !player.file) {
-      setNotice("Select the local video first.");
+    const exportVideo = await getExportVideo();
+    if (!exportVideo) {
+      setNotice("The cloud video is not available. Select the local video to continue.");
       fileInputRef.current?.click();
       return;
     }
@@ -702,7 +714,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
     setExporting("all");
     player.pause();
-    const session = new SmartVideoExportSession(player.file);
+    const session = new SmartVideoExportSession(exportVideo.source);
     try {
       const zip = directory ? null : new JSZip();
       const safeMatch = match.title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "match";
@@ -710,7 +722,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         const moment = match.moments[index];
         setExportStatus(`Exporting ${index + 1} of ${match.moments.length}: ${moment.momentType.name}`);
         const exported = await session.exportMoment({
-          sourceUrlFallback: player.sourceUrl,
+          sourceUrlFallback: exportVideo.url,
           match,
           moment,
           quality: exportQuality,

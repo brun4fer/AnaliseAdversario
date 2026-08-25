@@ -9,6 +9,7 @@ import {
   Input,
   Mp4OutputFormat,
   Output,
+  UrlSource,
   type EncodedPacket,
   type InputAudioTrack,
   type InputVideoTrack,
@@ -55,8 +56,13 @@ export class SmartVideoExportSession {
   private videoTrackPromise: Promise<InputVideoTrack | null> | null = null;
   private audioTrackPromise: Promise<InputAudioTrack | null> | null = null;
 
-  constructor(private readonly sourceFile: File) {
-    this.input = new Input({ formats: ALL_FORMATS, source: new BlobSource(sourceFile) });
+  constructor(source: File | string) {
+    this.input = new Input({
+      formats: ALL_FORMATS,
+      source: typeof source === "string"
+        ? new UrlSource(source, { maxCacheSize: 64 * 1024 * 1024, parallelism: 2 })
+        : new BlobSource(source),
+    });
   }
 
   async validate() {

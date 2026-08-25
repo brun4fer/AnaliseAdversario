@@ -160,6 +160,17 @@ export function ReportsClient() {
 
   async function getReportVideo(matchId: string) { return sessionFilesRef.current.get(matchId) || await getRememberedMatchVideo(matchId).catch(() => null); }
 
+  async function getReportExportSource(match: MatchDetail) {
+    const file = await getReportVideo(match.id);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      return { source: file as File | string, url, release: () => URL.revokeObjectURL(url) };
+    }
+    if (match.video?.storageStatus !== "READY") return null;
+    const remote = await getRemoteVideoUrl(match.id).catch(() => null);
+    return remote ? { source: remote.url as File | string, url: remote.url, release: () => undefined } : null;
+  }
+
   async function requestOperation(operation: PendingOperation) {
     if (clips.length === 0) return;
     if (operation === "play") {
@@ -181,8 +192,11 @@ export function ReportsClient() {
     setCheckingVideos(true); setVideoPreparationError(null);
     try {
       const requiredMatches = [...new Map(clips.map((clip) => [clip.match.id, clip.match])).values()];
-      const availability = await Promise.all(requiredMatches.map(async (match) => ({ match, file: await getReportVideo(match.id) })));
-      const missing = availability.filter((item) => !item.file).map((item) => item.match);
+      const availability = await Promise.all(requiredMatches.map(async (match) => ({
+        match,
+        available: match.video?.storageStatus === "READY" || Boolean(await getReportVideo(match.id)),
+      })));
+      const missing = availability.filter((item) => !item.available).map((item) => item.match);
       if (missing.length > 0) {
         setPendingOperation(operation);
         setMissingVideos(missing);
@@ -245,16 +259,16 @@ export function ReportsClient() {
       const byMatch = new Map<string, ReportClip[]>();
       for (const clip of clips) byMatch.set(clip.match.id, [...(byMatch.get(clip.match.id) || []), clip]);
       let completed = 0;
-      for (const [matchId, matchClips] of byMatch) {
-        const file = await getReportVideo(matchId);
-        if (!file) { missing.add(matchClips[0].match.title); continue; }
-        const url = URL.createObjectURL(file);
-        const session = new SmartVideoExportSession(file);
+      for (const matchClips of byMatch.values()) {
+        const match = matchClips[0].match;
+        const exportVideo = await getReportExportSource(match);
+        if (!exportVideo) { missing.add(match.title); continue; }
+        const session = new SmartVideoExportSession(exportVideo.source);
         try {
           for (let index = 0; index < matchClips.length; index += 1) {
             const clip = matchClips[index]; completed += 1; setExportStatus(`Exporting ${completed} of ${clips.length}: ${clip.match.title}`);
             const exported = await session.exportMoment({
-              sourceUrlFallback: url,
+              sourceUrlFallback: exportVideo.url,
               match: clip.match,
               moment: clip.moment,
               quality: exportQuality,
@@ -286,7 +300,7 @@ export function ReportsClient() {
               relativePaths.join(" | "),
             ]);
           }
-        } finally { session.dispose(); URL.revokeObjectURL(url); }
+        } finally { session.dispose(); exportVideo.release(); }
       }
       if (completed === 0) throw new Error("None of the selected videos are available in this browser.");
       const indexBlob = new Blob([toCsv(indexRows)], { type: "text/csv;charset=utf-8" });
