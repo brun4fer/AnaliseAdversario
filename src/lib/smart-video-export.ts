@@ -46,6 +46,8 @@ type ExportMomentInput = {
 const DIRECT_CUT_TOLERANCE_SECONDS = 0.04;
 const WEBCODECS_STALL_TIMEOUT_MS = 45_000;
 const WEBCODECS_CANCEL_GRACE_MS = 5_000;
+const WEBCODECS_MIN_TOTAL_TIMEOUT_MS = 90_000;
+const WEBCODECS_MAX_TOTAL_TIMEOUT_MS = 5 * 60_000;
 
 const transcodeSettings: Record<ExportQuality, { videoBitrate: number; audioBitrate: number }> = {
   original: { videoBitrate: 30_000_000, audioBitrate: 256_000 },
@@ -291,7 +293,7 @@ export class SmartVideoExportSession {
         throw new Error(`WebCodecs cannot export this video${reasons ? ` (${reasons})` : ""}.`);
       }
 
-      await executeConversionWithWatchdog(conversion, (progress) => {
+      await executeConversionWithWatchdog(conversion, end - start, (progress) => {
         onStatus?.(`Exact cut with WebCodecs: ${Math.min(100, Math.round(progress * 100))}%`);
       });
 
@@ -320,24 +322,38 @@ class WebCodecsStallError extends Error {
 
 async function executeConversionWithWatchdog(
   conversion: Conversion,
+  clipDurationSeconds: number,
   onProgress: (progress: number) => void,
 ) {
-  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let stallTimeout: ReturnType<typeof setTimeout> | null = null;
+  let totalTimeout: ReturnType<typeof setTimeout> | null = null;
   let rejectStall: ((error: Error) => void) | null = null;
+  let lastVisiblePercent = -1;
 
   const stalled = new Promise<never>((_, reject) => {
     rejectStall = reject;
   });
   const armWatchdog = () => {
-    if (timeout) clearTimeout(timeout);
-    timeout = setTimeout(() => rejectStall?.(new WebCodecsStallError()), WEBCODECS_STALL_TIMEOUT_MS);
+    if (stallTimeout) clearTimeout(stallTimeout);
+    stallTimeout = setTimeout(() => rejectStall?.(new WebCodecsStallError()), WEBCODECS_STALL_TIMEOUT_MS);
   };
 
   conversion.onProgress = (progress) => {
-    armWatchdog();
+    const visiblePercent = Math.min(100, Math.round(progress * 100));
+    // Tiny internal timestamp changes can keep firing while the percentage the
+    // user sees remains frozen. Only visible progress extends the stall timer.
+    if (visiblePercent > lastVisiblePercent) {
+      lastVisiblePercent = visiblePercent;
+      armWatchdog();
+    }
     onProgress(progress);
   };
   armWatchdog();
+  const totalTimeoutMs = Math.min(
+    WEBCODECS_MAX_TOTAL_TIMEOUT_MS,
+    Math.max(WEBCODECS_MIN_TOTAL_TIMEOUT_MS, Math.ceil(clipDurationSeconds * 8_000)),
+  );
+  totalTimeout = setTimeout(() => rejectStall?.(new WebCodecsStallError()), totalTimeoutMs);
 
   const execution = conversion.execute();
   try {
@@ -352,7 +368,8 @@ async function executeConversionWithWatchdog(
     void execution.catch(() => undefined);
     throw error;
   } finally {
-    if (timeout) clearTimeout(timeout);
+    if (stallTimeout) clearTimeout(stallTimeout);
+    if (totalTimeout) clearTimeout(totalTimeout);
   }
 }
 
