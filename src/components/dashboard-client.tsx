@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowRight, Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2, Users, X } from "lucide-react";
 
 import { apiFetch } from "@/lib/http";
 import type { MatchSummary } from "@/lib/domain";
@@ -10,10 +11,12 @@ import { formatTime } from "@/lib/time";
 import { Badge, Button, Panel, TextInput } from "@/components/ui";
 
 export function DashboardClient() {
+  const router = useRouter();
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [openingMatch, setOpeningMatch] = useState<MatchSummary | null>(null);
 
   const filteredMatches = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
@@ -152,12 +155,12 @@ export function DashboardClient() {
               </div>
 
               <div className="flex items-center gap-2 border-t border-white/10 bg-black/10 p-3">
-                <Link href={`/analysis/${match.id}`} className="min-w-0 flex-1">
-                  <Button variant="primary" className="w-full">
+                <div className="min-w-0 flex-1">
+                  <Button variant="primary" className="w-full" onClick={() => setOpeningMatch(match)}>
                     <Play size={16} />
                     Open analysis
                   </Button>
-                </Link>
+                </div>
                 <Link href={`/matches/${match.id}/edit`}>
                   <Button variant="secondary" size="icon" aria-label="Edit match">
                     <Pencil size={16} />
@@ -171,6 +174,36 @@ export function DashboardClient() {
           ))
         )}
       </section>
+
+      {openingMatch ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Choose the team to analyse">
+          <Panel className="w-full max-w-xl overflow-hidden border-cyan-300/25">
+            <div className="flex items-start justify-between gap-4 border-b border-white/10 p-5">
+              <div>
+                <div className="flex items-center gap-2 text-cyan-200"><Users size={17} /><span className="text-xs font-semibold uppercase tracking-[.2em]">Analysis perspective</span></div>
+                <h2 className="mt-2 text-xl font-semibold text-white">Which team do you want to analyse?</h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">Choose the team you want to study as the opponent. The same saved moments will automatically be shown from that team&apos;s perspective.</p>
+              </div>
+              <Button size="icon" variant="ghost" aria-label="Close" onClick={() => setOpeningMatch(null)}><X size={17} /></Button>
+            </div>
+            <div className="grid gap-3 p-5 sm:grid-cols-2">
+              {openingMatch.teamName ? (
+                <button type="button" className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08]" onClick={() => router.push(`/analysis/${openingMatch.id}?perspective=team`)}>
+                  <span className="text-xs uppercase tracking-[.16em] text-slate-500">Analyse as opponent</span>
+                  <span className="mt-2 flex items-center justify-between gap-3 text-lg font-semibold text-white"><span className="truncate">{openingMatch.teamName}</span><ArrowRight size={18} className="shrink-0 text-cyan-300 transition group-hover:translate-x-1" /></span>
+                  <span className="mt-2 block text-xs leading-5 text-slate-500">Organization, transitions, set pieces and results are shown in the reversed perspective.</span>
+                </button>
+              ) : null}
+              <button type="button" className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08]" onClick={() => router.push(`/analysis/${openingMatch.id}?perspective=opponent`)}>
+                <span className="text-xs uppercase tracking-[.16em] text-slate-500">Analyse as opponent</span>
+                <span className="mt-2 flex items-center justify-between gap-3 text-lg font-semibold text-white"><span className="truncate">{openingMatch.opponentName}</span><ArrowRight size={18} className="shrink-0 text-cyan-300 transition group-hover:translate-x-1" /></span>
+                <span className="mt-2 block text-xs leading-5 text-slate-500">Uses the original perspective in which the moments are stored.</span>
+              </button>
+            </div>
+            <p className="border-t border-white/10 px-5 py-3 text-xs text-slate-500">This choice does not duplicate or change the saved analysis. You can choose again whenever you reopen the match.</p>
+          </Panel>
+        </div>
+      ) : null}
     </div>
   );
 }

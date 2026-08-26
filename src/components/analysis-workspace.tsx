@@ -35,6 +35,16 @@ import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/component
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { cn } from "@/lib/cn";
+import {
+  canonicalOutcome,
+  displayMoment,
+  displayMomentType,
+  displayOutcome,
+  perspectiveMomentTypeChoices,
+  perspectiveQuery,
+  shortcutSourceTypeId,
+  type AnalysisPerspective,
+} from "@/lib/analysis-perspective";
 import type {
   CreateSubMomentInput,
   MatchDetail,
@@ -85,7 +95,7 @@ function createTemporaryId() {
   return globalThis.crypto?.randomUUID?.() ?? `active-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function AnalysisWorkspace({ matchId }: { matchId: string }) {
+export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; perspective: AnalysisPerspective }) {
   const player = useVideoPlayer();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
@@ -152,7 +162,11 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     return () => window.clearTimeout(timeout);
   }, [notice]);
 
-  const momentTypes = useMemo(() => settings?.momentTypes ?? [], [settings?.momentTypes]);
+  const canonicalMomentTypes = useMemo(() => settings?.momentTypes ?? [], [settings?.momentTypes]);
+  const momentTypes = useMemo(
+    () => perspectiveMomentTypeChoices(canonicalMomentTypes, perspective),
+    [canonicalMomentTypes, perspective],
+  );
   const subMomentTypes = useMemo(() => settings?.subMomentTypes ?? [], [settings?.subMomentTypes]);
 
   const selectedMoment = useMemo(
@@ -161,9 +175,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   );
 
   const selectedSubMomentTypes = useMemo(
-    () => getSubMomentTypesForMoment(subMomentTypes, selectedMoment?.momentType ?? null),
-    [selectedMoment?.momentType, subMomentTypes],
+    () => getSubMomentTypesForMoment(
+      subMomentTypes,
+      selectedMoment ? displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective) : null,
+    ),
+    [canonicalMomentTypes, perspective, selectedMoment, subMomentTypes],
   );
+
+  const analysedTeamName = match
+    ? perspective === "team" ? match.teamName || match.opponentName : match.opponentName
+    : "";
 
   const pendingMoment = useMemo(() => {
     if (!pendingSubMoment) {
@@ -234,9 +255,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const getShortcutForMomentType = useCallback(
     (momentTypeId: string) =>
       settings?.shortcuts.find(
-        (shortcut) => shortcut.actionType === "moment.toggle" && shortcut.targetType === "momentType" && shortcut.targetId === momentTypeId,
+        (shortcut) => shortcut.actionType === "moment.toggle" && shortcut.targetType === "momentType" && shortcut.targetId === shortcutSourceTypeId(momentTypeId, canonicalMomentTypes, perspective),
       )?.key ?? "-",
-    [settings?.shortcuts],
+    [canonicalMomentTypes, perspective, settings?.shortcuts],
   );
 
   const getShortcutForSubMomentType = useCallback(
@@ -300,7 +321,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   }, [upsertMomentInState]);
 
   const deleteMoment = useCallback(async (moment: MomentRecord) => {
-    if (!window.confirm(`Delete ${moment.momentType.name} at ${formatPreciseTime(moment.startTimeSeconds)}?`)) return;
+    const visibleType = displayMomentType(moment.momentType, canonicalMomentTypes, perspective);
+    if (!window.confirm(`Delete ${visibleType.name} at ${formatPreciseTime(moment.startTimeSeconds)}?`)) return;
     await apiFetch<void>(`/api/moments/${moment.id}`, { method: "DELETE" });
     setMatch((current) => current ? {
       ...current,
@@ -310,11 +332,12 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     setSelectedMomentId((current) => current === moment.id ? null : current);
     setEditingMoment((current) => current?.id === moment.id ? null : current);
     setNotice("Moment deleted.");
-  }, []);
+  }, [canonicalMomentTypes, perspective]);
 
   const toggleOutcome = useCallback(async (moment: MomentRecord, outcome: "positive" | "negative") => {
-    await updateMoment(moment.id, { outcome: moment.outcome === outcome ? null : outcome });
-  }, [updateMoment]);
+    const visibleOutcome = displayOutcome(moment.outcome, perspective);
+    await updateMoment(moment.id, { outcome: visibleOutcome === outcome ? null : canonicalOutcome(outcome, perspective) });
+  }, [perspective, updateMoment]);
 
   const updateSubMoment = useCallback(async (subMomentId: string, input: UpdateSubMomentInput) => {
     const saved = await apiFetch<SubMomentRecord>(`/api/submoments/${subMomentId}`, {
@@ -333,8 +356,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   }, []);
 
   const toggleSubMomentOutcome = useCallback(async (subMoment: SubMomentRecord, outcome: "positive" | "negative") => {
-    await updateSubMoment(subMoment.id, { outcome: subMoment.outcome === outcome ? null : outcome });
-  }, [updateSubMoment]);
+    const visibleOutcome = displayOutcome(subMoment.outcome, perspective);
+    await updateSubMoment(subMoment.id, { outcome: visibleOutcome === outcome ? null : canonicalOutcome(outcome, perspective) });
+  }, [perspective, updateSubMoment]);
 
   const deleteSubMoment = useCallback(async (subMoment: SubMomentRecord) => {
     if (!window.confirm(`Delete submoment ${subMoment.subMomentType.name}?`)) return;
@@ -506,7 +530,9 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     const configuredBindings = settings.shortcuts
       .map((shortcut) => {
         if (shortcut.actionType === "moment.toggle" && shortcut.targetId) {
-          const momentType = momentTypes.find((type) => type.id === shortcut.targetId);
+          const momentType = momentTypes.find(
+            (type) => shortcutSourceTypeId(type.id, canonicalMomentTypes, perspective) === shortcut.targetId,
+          );
           if (!momentType) {
             return null;
           }
@@ -528,7 +554,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       .filter(Boolean) as ShortcutBinding[];
 
     return configuredBindings;
-  }, [cancelLastActiveMoment, momentTypes, player, settings, toggleMoment]);
+  }, [cancelLastActiveMoment, canonicalMomentTypes, momentTypes, perspective, player, settings, toggleMoment]);
 
   useKeyboardShortcuts(shortcutBindings, Boolean(settings) && !pendingSubMoment);
 
@@ -662,8 +688,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     try {
       const exported = await session.exportMoment({
         sourceUrlFallback: exportVideo.url,
-        match,
-        moment: selectedMoment,
+        match: { ...match, opponentName: analysedTeamName },
+        moment: displayMoment(selectedMoment, canonicalMomentTypes, perspective),
         quality: exportQuality,
         onStatus: setExportStatus,
       });
@@ -703,18 +729,20 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     const session = new SmartVideoExportSession(exportVideo.source);
     try {
       const zip = directory ? null : new JSZip();
-      const safeType = selectedMoment.momentType.name
+      const visibleSelectedMoment = displayMoment(selectedMoment, canonicalMomentTypes, perspective);
+      const safeType = visibleSelectedMoment.momentType.name
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^\w.-]+/g, "-")
         .replace(/^-+|-+$/g, "") || "moment";
       for (let index = 0; index < moments.length; index += 1) {
         const moment = moments[index];
-        setExportStatus(`Exporting ${index + 1} of ${moments.length}: ${moment.momentType.name}`);
+        const visibleMoment = displayMoment(moment, canonicalMomentTypes, perspective);
+        setExportStatus(`Exporting ${index + 1} of ${moments.length}: ${visibleMoment.momentType.name}`);
         const exported = await session.exportMoment({
           sourceUrlFallback: exportVideo.url,
-          match,
-          moment,
+          match: { ...match, opponentName: analysedTeamName },
+          moment: visibleMoment,
           quality: exportQuality,
           onStatus: (status) => setExportStatus(`${index + 1} of ${moments.length}: ${status}`),
         });
@@ -762,15 +790,16 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       const safeMatch = match.title.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "match";
       for (let index = 0; index < match.moments.length; index += 1) {
         const moment = match.moments[index];
-        setExportStatus(`Exporting ${index + 1} of ${match.moments.length}: ${moment.momentType.name}`);
+        const visibleMoment = displayMoment(moment, canonicalMomentTypes, perspective);
+        setExportStatus(`Exporting ${index + 1} of ${match.moments.length}: ${visibleMoment.momentType.name}`);
         const exported = await session.exportMoment({
           sourceUrlFallback: exportVideo.url,
-          match,
-          moment,
+          match: { ...match, opponentName: analysedTeamName },
+          moment: visibleMoment,
           quality: exportQuality,
           onStatus: (status) => setExportStatus(`${index + 1} of ${match.moments.length}: ${status}`),
         });
-        const folder = moment.momentType.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "moments";
+        const folder = visibleMoment.momentType.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "moments";
         const path = `${safeMatch}/${folder}/${String(index + 1).padStart(3, "0")}-${exported.fileName}`;
         if (directory) await writeBlobToDirectory(directory, path, exported.blob);
         else zip?.file(`${folder}/${String(index + 1).padStart(3, "0")}-${exported.fileName}`, exported.blob);
@@ -815,6 +844,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
       <Panel className="flex shrink-0 items-stretch overflow-hidden">
         <div className="flex shrink-0 items-center gap-1 border-r border-white/10 px-2">
           <Link href="/" className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-[10px] font-semibold text-slate-400 hover:bg-white/[.06] hover:text-white"><ArrowLeft size={12} />Matches</Link>
+          <Badge className="max-w-36 truncate border-cyan-300/25 bg-cyan-300/10 text-[10px] text-cyan-100" title={`Analysing ${analysedTeamName}`}>Analysing: {analysedTeamName}</Badge>
           <Link href={`/matches/${match.id}/edit`} className="flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-white/[.06] hover:text-white" title="Edit match" aria-label="Edit match"><Settings size={13} /></Link>
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Main moments">
@@ -834,8 +864,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
             {exporting === "all" && exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
             {selectedMoment ? (
               <div className="mt-3 border-t border-white/10 pt-3">
-                <p className="truncate text-[11px] font-medium text-cyan-100" title={selectedMoment.momentType.name}>
-                  {selectedMoment.momentType.name}
+                <p className="truncate text-[11px] font-medium text-cyan-100" title={displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective).name}>
+                  {displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective).name}
                 </p>
                 <p className="mt-1 font-mono text-[10px] text-slate-500">
                   {formatPreciseTime(selectedMoment.startTimeSeconds)} – {formatPreciseTime(selectedMoment.endTimeSeconds)}
@@ -887,12 +917,12 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     selectedMomentId === moment.id && "bg-cyan-300/10 text-cyan-100",
                   )}
                 >
-                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2" onClick={() => reviewMoment(moment)} title={`${moment.momentType.name} · ${formatPreciseTime(moment.startTimeSeconds)}`}>
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: moment.momentType.color }} />
-                    <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{moment.momentType.name}</span>
+                  <button type="button" className="flex min-w-0 flex-1 items-center gap-2" onClick={() => reviewMoment(moment)} title={`${displayMomentType(moment.momentType, canonicalMomentTypes, perspective).name} · ${formatPreciseTime(moment.startTimeSeconds)}`}>
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: displayMomentType(moment.momentType, canonicalMomentTypes, perspective).color }} />
+                    <span className="min-w-0 flex-1 truncate text-xs text-slate-200">{displayMomentType(moment.momentType, canonicalMomentTypes, perspective).name}</span>
                     <span className="shrink-0 font-mono text-[10px] text-slate-500">{formatPreciseTime(moment.startTimeSeconds)}</span>
                   </button>
-                  <OutcomeButtons compact value={moment.outcome} onChange={(outcome) => void toggleOutcome(moment, outcome)} />
+                  <OutcomeButtons compact value={displayOutcome(moment.outcome, perspective)} onChange={(outcome) => void toggleOutcome(moment, outcome)} />
                   <button type="button" className="inline-flex h-6 items-center gap-1 rounded-md border border-cyan-300/25 bg-cyan-300/10 px-1.5 text-[10px] font-medium text-cyan-100 hover:bg-cyan-300/20" onClick={() => setEditingMoment(moment)} aria-label="Edit moment"><Pencil size={11} />Edit</button>
                   <button type="button" className="inline-flex h-6 items-center gap-1 rounded-md border border-red-400/30 bg-red-500/10 px-1.5 text-[10px] font-medium text-red-100 hover:bg-red-500/25" onClick={() => void deleteMoment(moment)} aria-label="Delete moment"><Trash2 size={11} />Delete</button>
                 </div>
@@ -1043,7 +1073,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
             <div className="hidden">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Submoments</p>
-                {selectedMoment ? <span className="truncate text-[11px] text-cyan-100">{selectedMoment.momentType.name}</span> : null}
+                {selectedMoment ? <span className="truncate text-[11px] text-cyan-100">{displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective).name}</span> : null}
               </div>
               {!selectedMoment ? (
                 <p className="mt-3 rounded-md border border-white/10 bg-white/[0.03] p-3 text-xs leading-5 text-slate-500">
@@ -1094,7 +1124,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                             <span className="shrink-0 font-mono text-[10px] text-slate-500">{subMoment.timeSeconds !== null ? formatPreciseTime(subMoment.timeSeconds) : "—"}</span>
                           </button>
                           <div className="mt-2 flex flex-wrap items-center justify-end gap-1">
-                            <OutcomeButtons value={subMoment.outcome} onChange={(outcome) => void toggleSubMomentOutcome(subMoment, outcome)} />
+                            <OutcomeButtons value={displayOutcome(subMoment.outcome, perspective)} onChange={(outcome) => void toggleSubMomentOutcome(subMoment, outcome)} />
                             <Button size="sm" variant="secondary" className="h-7" onClick={() => setEditingSubMoment(subMoment)}><Pencil size={12} />Edit</Button>
                             <Button size="sm" variant="danger" className="h-7" onClick={() => void deleteSubMoment(subMoment)}><Trash2 size={12} />Delete</Button>
                           </div>
@@ -1169,13 +1199,13 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
         </aside>
       </div>
 
-      <Panel className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5"><div className="min-w-0"><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-slate-500">Identification</span><span className="ml-2 text-xs font-semibold text-white">Submoments</span></div><Link href={`/analysis/${match.id}/submoments`}><Button size="sm" variant="primary" className="h-8" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={14} /></Button></Link></Panel>
-      <Timeline moments={match.moments} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
+      <Panel className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5"><div className="min-w-0"><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-slate-500">Identification</span><span className="ml-2 text-xs font-semibold text-white">Submoments</span></div><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={14} /></Button></Link></Panel>
+      <Timeline moments={match.moments.map((moment) => displayMoment(moment, canonicalMomentTypes, perspective))} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
 
-      {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
+      {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
 
       {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypes} currentTime={player.currentTime} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
-      {editingSubMoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubMoment} submomentTypes={getSubMomentTypesForMoment(subMomentTypes, selectedMoment.momentType)} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={player.currentTime} onSave={updateSubMoment} onClose={() => setEditingSubMoment(null)} /> : null}
+      {editingSubMoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubMoment} submomentTypes={selectedSubMomentTypes.some((type) => type.id === editingSubMoment.subMomentTypeId) ? selectedSubMomentTypes : [editingSubMoment.subMomentType, ...selectedSubMomentTypes]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={player.currentTime} onSave={updateSubMoment} onClose={() => setEditingSubMoment(null)} /> : null}
 
       {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}
 
