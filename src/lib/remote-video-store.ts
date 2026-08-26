@@ -10,11 +10,34 @@ export type StoredVideo = {
   uploadedAt?: string | null;
 };
 
+export type CloudVideoAsset = {
+  id: string;
+  fileName: string;
+  fileSize: string;
+  durationSeconds: number;
+  mimeType: string;
+  storageStatus: "READY";
+  etag?: string | null;
+  uploadedAt?: string | null;
+  createdAt: string;
+};
+
 type UploadStatus = { phase: "preparing" | "uploading" | "finishing"; progress: number; detail: string };
 type UploadedPart = { partNumber: number; etag: string; size?: number };
 
 export async function getRemoteVideoUrl(matchId: string) {
   return apiFetch<{ url: string; expiresAt: string }>(`/api/matches/${matchId}/video`);
+}
+
+export async function getCloudVideoLibrary() {
+  return apiFetch<{ assets: CloudVideoAsset[] }>("/api/media-library");
+}
+
+export async function attachCloudVideo(matchId: string, mediaAssetId: string) {
+  return apiFetch<{ video: StoredVideo }>(`/api/matches/${matchId}/video/library`, {
+    method: "POST",
+    body: JSON.stringify({ mediaAssetId }),
+  });
 }
 
 export async function readVideoDuration(file: File) {

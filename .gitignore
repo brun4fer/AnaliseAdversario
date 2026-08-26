@@ -24,6 +24,7 @@ pnpm-debug.log*
 
 # prisma
 prisma/dev.db
+/src/generated/media-client
 
 # vercel
 .vercel

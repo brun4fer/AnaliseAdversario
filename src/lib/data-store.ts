@@ -34,6 +34,10 @@ import type {
 } from "@/lib/domain";
 import { hasDatabaseUrl, prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
+import { removeMediaReference } from "@/lib/media-library";
+import { mediaPrisma } from "@/lib/media-prisma";
+import { abortMediaMultipartUpload } from "@/lib/media-r2";
+import { ensureMediaWorkspace } from "@/lib/media-workspace";
 import { abortMultipartUpload, deleteR2Object } from "@/lib/r2";
 
 type MemoryMoment = Omit<MomentRecord, "momentType" | "subMoments">;
@@ -725,9 +729,22 @@ export async function deleteMatch(matchId: string) {
     const ownerId = await requireCurrentUserId();
     const match = await prisma.match.findFirst({ where: { id: matchId, ownerId }, include: { videos: true } });
     if (!match) throw new Error("Match not found.");
+    const account = match.videos.some((video) => video.mediaAssetId)
+      ? await prisma.user.findUnique({ where: { id: ownerId } })
+      : null;
+    const shared = account ? await ensureMediaWorkspace(account) : null;
     for (const video of match.videos) {
-      if (video.storageKey && video.uploadId) await abortMultipartUpload(video.storageKey, video.uploadId).catch(() => undefined);
-      if (video.storageKey) await deleteR2Object(video.storageKey);
+      if (video.mediaAssetId && shared) {
+        const asset = await mediaPrisma.mediaAsset.findFirst({ where: { id: video.mediaAssetId, mediaWorkspaceId: shared.mediaWorkspace.id } });
+        if (asset?.storageStatus === "UPLOADING" && asset.uploadId) {
+          await abortMediaMultipartUpload(asset.storageKey, asset.uploadId).catch(() => undefined);
+          await mediaPrisma.mediaAsset.update({ where: { id: asset.id }, data: { storageStatus: "FAILED", uploadId: null } }).catch(() => undefined);
+        }
+        await removeMediaReference(shared.appId, video.id);
+      } else {
+        if (video.storageKey && video.uploadId) await abortMultipartUpload(video.storageKey, video.uploadId).catch(() => undefined);
+        if (video.storageKey) await deleteR2Object(video.storageKey);
+      }
     }
     await prisma.match.delete({ where: { id: match.id } });
     return;
@@ -761,7 +778,17 @@ export async function upsertVideoMetadata(matchId: string, input: VideoMetadataI
       mimeType: input.mimeType,
       lastModified,
       storageType: "local",
+      storageKey: null,
+      storageStatus: "LOCAL" as const,
+      uploadId: null,
+      etag: null,
+      uploadedAt: null,
+      mediaAssetId: null,
     };
+
+    if (existing?.mediaAssetId && process.env.MEDIA_LIBRARY_APP_ID) {
+      await removeMediaReference(process.env.MEDIA_LIBRARY_APP_ID, existing.id);
+    }
 
     const video = existing
       ? await prisma.video.update({ where: { id: existing.id }, data })

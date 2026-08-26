@@ -121,6 +121,7 @@ model Video {
   storageKey      String?            @unique
   storageStatus   VideoStorageStatus @default(LOCAL)
   uploadId        String?
+  mediaAssetId    String?
   etag            String?
   uploadedAt      DateTime?
   createdAt       DateTime           @default(now())
@@ -130,6 +131,7 @@ model Video {
   moments Moment[]
 
   @@index([matchId])
+  @@index([mediaAssetId])
 }
 
 enum VideoStorageStatus {

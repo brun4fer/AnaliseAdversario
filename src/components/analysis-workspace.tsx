@@ -9,6 +9,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Clock,
+  Cloud,
   Crosshair,
   Download,
   FileVideo,
@@ -26,6 +27,7 @@ import {
 } from "lucide-react";
 
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
+import { CloudVideoLibrary } from "@/components/cloud-video-library";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
@@ -48,7 +50,7 @@ import type {
 import { apiFetch } from "@/lib/http";
 import { isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
-import { getRemoteVideoUrl, uploadMatchVideo } from "@/lib/remote-video-store";
+import { attachCloudVideo, getCloudVideoLibrary, getRemoteVideoUrl, uploadMatchVideo, type CloudVideoAsset } from "@/lib/remote-video-store";
 import { SmartVideoExportSession } from "@/lib/smart-video-export";
 import { getSubMomentShortcut, getSubMomentTypesForMoment, requiresGoalLocationForSubMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime, roundSeconds } from "@/lib/time";
@@ -97,6 +99,11 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
   const [selectedSubMomentId, setSelectedSubMomentId] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [cloudLibraryOpen, setCloudLibraryOpen] = useState(false);
+  const [cloudAssets, setCloudAssets] = useState<CloudVideoAsset[]>([]);
+  const [cloudLoading, setCloudLoading] = useState(false);
+  const [cloudError, setCloudError] = useState<string | null>(null);
+  const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
   const [seekTime, setSeekTime] = useState("");
@@ -558,6 +565,41 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
     }
   }
 
+  async function loadCloudLibrary() {
+    setCloudLoading(true);
+    setCloudError(null);
+    try {
+      setCloudAssets((await getCloudVideoLibrary()).assets);
+    } catch (cloudLoadError) {
+      setCloudError(cloudLoadError instanceof Error ? cloudLoadError.message : "Could not load the cloud library.");
+    } finally {
+      setCloudLoading(false);
+    }
+  }
+
+  function openCloudLibrary() {
+    setCloudLibraryOpen(true);
+    void loadCloudLibrary();
+  }
+
+  async function selectCloudVideo(asset: CloudVideoAsset) {
+    setAttachingAssetId(asset.id);
+    setCloudError(null);
+    try {
+      await attachCloudVideo(matchId, asset.id);
+      const [remote, savedMatch] = await Promise.all([getRemoteVideoUrl(matchId), apiFetch<MatchDetail>(`/api/matches/${matchId}`)]);
+      player.loadUrl(remote.url);
+      setMatch(savedMatch);
+      setCloudLibraryOpen(false);
+      setNotice(`${asset.fileName} selected from the shared cloud library.`);
+      if (savedMatch.moments.length > 0) setResumePrompt(true);
+    } catch (attachError) {
+      setCloudError(attachError instanceof Error ? attachError.message : "Could not use this cloud video.");
+    } finally {
+      setAttachingAssetId(null);
+    }
+  }
+
   function handleLoadedMetadata() { player.handleLoadedMetadata(); }
 
   function reviewMoment(moment: MomentRecord) {
@@ -779,6 +821,7 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
           {momentTypes.map((type) => { const active = activeMoments.some((moment) => moment.momentTypeId === type.id); return <button key={type.id} type="button" onClick={() => toggleMoment(type)} title={`${type.name} · ${getShortcutForMomentType(type.id)}`} className={cn("flex h-11 min-w-[6rem] shrink-0 items-center justify-between gap-2 rounded-md border px-2 text-left transition", active ? "border-cyan-200/70 bg-cyan-300/10 shadow-glow" : "border-white/10 bg-white/[.035] hover:bg-white/[.08]")}><span className="min-w-0"><span className="block truncate text-[9px] font-bold" style={{ color: type.color }}>{type.name}</span><span className={cn("mt-0.5 block text-[8px]", active ? "text-cyan-100" : "text-slate-600")}>{active ? "In progress" : "Click to start"}</span></span><kbd className="rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-[9px] text-slate-300">{getShortcutForMomentType(type.id)}</kbd></button>; })}
         </div>
         <div className="flex shrink-0 items-center border-l border-white/10 px-2">
+          <Button size="sm" className="mr-1 h-8 whitespace-nowrap" variant="secondary" disabled={uploading} onClick={openCloudLibrary}><Cloud size={13} />Cloud library</Button>
           <Button size="sm" className="h-8 whitespace-nowrap" variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{uploading ? `Cancel ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}</Button>
         </div>
       </Panel>
@@ -885,10 +928,10 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
                     The video will be stored privately in Cloudflare R2 and will be available on every device signed into this account.
                   </p>
                   {match.video ? <div className="mt-4 w-full max-w-lg rounded-md border border-cyan-300/25 bg-cyan-300/[.07] p-3 text-left"><p className="text-[10px] font-medium uppercase tracking-[.18em] text-cyan-200/70">Expected video</p><p className="mt-1 truncate text-sm font-medium text-cyan-50">{match.video.fileName}</p><p className="mt-1 text-xs text-slate-400">{formatBytes(match.video.fileSize)} · {formatTime(match.video.durationSeconds)}</p></div> : <div className="mt-4 rounded-md border border-amber-300/20 bg-amber-500/[.06] px-3 py-2 text-xs text-amber-100">No video has been associated with this match yet.</div>}
-                  <Button className="mt-5" variant="primary" onClick={() => fileInputRef.current?.click()}>
-                    <Upload size={16} />
-                    {match.video?.storageStatus === "READY" ? "Replace video" : "Choose video"}
-                  </Button>
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
+                    <Button variant="primary" onClick={() => fileInputRef.current?.click()}><Upload size={16} />Upload new</Button>
+                    <Button variant="secondary" onClick={openCloudLibrary}><Cloud size={16} />Cloud library</Button>
+                  </div>
                 </div>
               )}
             </div>
@@ -1133,6 +1176,8 @@ export function AnalysisWorkspace({ matchId }: { matchId: string }) {
 
       {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypes} currentTime={player.currentTime} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
       {editingSubMoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubMoment} submomentTypes={getSubMomentTypesForMoment(subMomentTypes, selectedMoment.momentType)} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={player.currentTime} onSave={updateSubMoment} onClose={() => setEditingSubMoment(null)} /> : null}
+
+      {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}
 
       {notice ? (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-md border border-cyan-300/25 bg-pitch-900 px-4 py-2 text-sm text-cyan-100 shadow-glow">

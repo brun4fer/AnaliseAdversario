@@ -67,4 +67,11 @@ export async function requireCurrentUserId() {
   return session.userId;
 }
 
+export async function requireCurrentUser() {
+  const userId = await requireCurrentUserId();
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error("The signed-in user no longer exists.");
+  return user;
+}
+
 export const sessionCookieOptions = { httpOnly: true, sameSite: "lax" as const, secure: process.env.NODE_ENV === "production", path: "/", maxAge: 60 * 60 * 24 * 7 };
