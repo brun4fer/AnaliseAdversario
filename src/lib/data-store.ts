@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type {
   Match,
+  MatchAnalysis,
   MomentType,
   Prisma,
   ShortcutSetting,
@@ -18,6 +19,8 @@ import type {
   CreateMomentInput,
   CreateSubMomentInput,
   MatchDetail,
+  MatchAnalysisPerspective,
+  MatchAnalysisRecord,
   MatchRecord,
   MatchSummary,
   MomentRecord,
@@ -45,6 +48,7 @@ type MemorySubMoment = Omit<SubMomentRecord, "subMomentType">;
 
 type MemoryStore = {
   matches: MatchRecord[];
+  matchAnalyses: Array<Omit<MatchAnalysisRecord, "analysedTeamName">>;
   videos: VideoRecord[];
   momentTypes: MomentTypeRecord[];
   moments: MemoryMoment[];
@@ -132,6 +136,7 @@ function getMemoryStore() {
   if (!globalForStore.memoryStore) {
     globalForStore.memoryStore = {
       matches: [],
+      matchAnalyses: [],
       videos: [],
       momentTypes: defaultMomentTypes.map((type) => ({ ...type })),
       moments: [],
@@ -230,6 +235,28 @@ function mapMatch(match: Match): MatchRecord {
     secondHalfEndSeconds: match.secondHalfEndSeconds,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
+  };
+}
+
+function mapMatchAnalysis(analysis: MatchAnalysis, match: Pick<MatchRecord, "teamName" | "opponentName">): MatchAnalysisRecord {
+  const perspective = analysis.perspective === "team" ? "team" : "opponent";
+  return {
+    id: analysis.id,
+    matchId: analysis.matchId,
+    perspective,
+    analysedTeamName: perspective === "team" ? match.teamName || match.opponentName : match.opponentName,
+    createdAt: analysis.createdAt.toISOString(),
+    updatedAt: analysis.updatedAt.toISOString(),
+  };
+}
+
+function hydrateMemoryMatchAnalysis(
+  analysis: Omit<MatchAnalysisRecord, "analysedTeamName">,
+  match: Pick<MatchRecord, "teamName" | "opponentName">,
+): MatchAnalysisRecord {
+  return {
+    ...analysis,
+    analysedTeamName: analysis.perspective === "team" ? match.teamName || match.opponentName : match.opponentName,
   };
 }
 
@@ -499,16 +526,21 @@ export async function listMatches(): Promise<MatchSummary[]> {
       where: { ownerId },
       include: {
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
+        analyses: { orderBy: { createdAt: "asc" } },
         _count: { select: { moments: true } },
       },
       orderBy: { updatedAt: "desc" },
     });
 
-    return matches.map((match) => ({
-      ...mapMatch(match),
-      video: match.videos[0] ? mapVideo(match.videos[0]) : null,
-      momentCount: match._count.moments,
-    }));
+    return matches.map((match) => {
+      const mappedMatch = mapMatch(match);
+      return {
+        ...mappedMatch,
+        video: match.videos[0] ? mapVideo(match.videos[0]) : null,
+        momentCount: match._count.moments,
+        analyses: match.analyses.map((analysis) => mapMatchAnalysis(analysis, mappedMatch)),
+      };
+    });
   }
 
   const store = getMemoryStore();
@@ -517,6 +549,7 @@ export async function listMatches(): Promise<MatchSummary[]> {
       ...match,
       video: store.videos.find((video) => video.matchId === match.id) ?? null,
       momentCount: store.moments.filter((moment) => moment.matchId === match.id).length,
+      analyses: store.matchAnalyses.filter((analysis) => analysis.matchId === match.id).map((analysis) => hydrateMemoryMatchAnalysis(analysis, match)),
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -529,6 +562,7 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
       where: { id: matchId, ownerId },
       include: {
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
+        analyses: { orderBy: { createdAt: "asc" } },
         moments: {
           include: {
             momentType: true,
@@ -546,10 +580,12 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
       return null;
     }
 
+    const mappedMatch = mapMatch(match);
     return {
-      ...mapMatch(match),
+      ...mappedMatch,
       video: match.videos[0] ? mapVideo(match.videos[0]) : null,
       momentCount: match.moments.length,
+      analyses: match.analyses.map((analysis) => mapMatchAnalysis(analysis, mappedMatch)),
       moments: match.moments.map(mapMoment),
     };
   }
@@ -569,6 +605,7 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
     ...match,
     video: store.videos.find((video) => video.matchId === matchId) ?? null,
     momentCount: moments.length,
+    analyses: store.matchAnalyses.filter((analysis) => analysis.matchId === matchId).map((analysis) => hydrateMemoryMatchAnalysis(analysis, match)),
     moments,
   };
 }
@@ -614,6 +651,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
         homeClubId: normalizeOptionalText(input.homeClubId),
         awayClubId: normalizeOptionalText(input.awayClubId),
         competitionId: normalizeOptionalText(input.competitionId),
+        analyses: { create: { ownerId, perspective: "opponent" } },
       },
     });
     return mapMatch(match);
@@ -643,7 +681,42 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     updatedAt: createdAt,
   };
   store.matches.push(match);
+  store.matchAnalyses.push({
+    id: id(),
+    matchId: match.id,
+    perspective: "opponent",
+    createdAt,
+    updatedAt: createdAt,
+  });
   return match;
+}
+
+export async function saveMatchAnalysis(matchId: string, perspective: MatchAnalysisPerspective): Promise<MatchAnalysisRecord> {
+  if (perspective !== "opponent" && perspective !== "team") throw new Error("Invalid analysis perspective.");
+
+  if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const match = await prisma.match.findFirst({ where: { id: matchId, ownerId } });
+    if (!match) throw new Error("Match not found.");
+    if (perspective === "team" && !match.teamName) throw new Error("The second team is not configured for this match.");
+    const analysis = await prisma.matchAnalysis.upsert({
+      where: { matchId_perspective: { matchId, perspective } },
+      update: { ownerId },
+      create: { matchId, ownerId, perspective },
+    });
+    return mapMatchAnalysis(analysis, mapMatch(match));
+  }
+
+  const store = getMemoryStore();
+  const match = store.matches.find((item) => item.id === matchId);
+  if (!match) throw new Error("Match not found.");
+  if (perspective === "team" && !match.teamName) throw new Error("The second team is not configured for this match.");
+  const existing = store.matchAnalyses.find((analysis) => analysis.matchId === matchId && analysis.perspective === perspective);
+  if (existing) return hydrateMemoryMatchAnalysis(existing, match);
+  const createdAt = now();
+  const analysis = { id: id(), matchId, perspective, createdAt, updatedAt: createdAt };
+  store.matchAnalyses.push(analysis);
+  return hydrateMemoryMatchAnalysis(analysis, match);
 }
 
 export async function updateMatch(matchId: string, input: UpdateMatchInput): Promise<MatchRecord> {
@@ -752,6 +825,7 @@ export async function deleteMatch(matchId: string) {
 
   const store = getMemoryStore();
   store.matches = store.matches.filter((match) => match.id !== matchId);
+  store.matchAnalyses = store.matchAnalyses.filter((analysis) => analysis.matchId !== matchId);
   store.videos = store.videos.filter((video) => video.matchId !== matchId);
   const deletedMomentIds = store.moments.filter((moment) => moment.matchId === matchId).map((moment) => moment.id);
   store.moments = store.moments.filter((moment) => moment.matchId !== matchId);

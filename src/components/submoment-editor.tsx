@@ -46,6 +46,13 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
+
+  useEffect(() => {
+    void apiFetch(`/api/matches/${matchId}/analyses`, {
+      method: "POST",
+      body: JSON.stringify({ perspective }),
+    }).catch((saveError: Error) => setError(saveError.message));
+  }, [matchId, perspective]);
   const matchLoaded = match !== null;
   const videoStorageStatus = match?.video?.storageStatus;
   const videoUpdatedAt = match?.video?.updatedAt;

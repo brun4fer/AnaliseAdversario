@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2, Users, X } from "lucide-react";
 
 import { apiFetch } from "@/lib/http";
-import type { MatchSummary } from "@/lib/domain";
+import type { MatchAnalysisPerspective, MatchAnalysisRecord, MatchSummary } from "@/lib/domain";
 import { formatTime } from "@/lib/time";
 import { Badge, Button, Panel, TextInput } from "@/components/ui";
 
@@ -17,17 +17,23 @@ export function DashboardClient() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [openingMatch, setOpeningMatch] = useState<MatchSummary | null>(null);
+  const [savingPerspective, setSavingPerspective] = useState<MatchAnalysisPerspective | null>(null);
+
+  const analysisCards = useMemo(
+    () => matches.flatMap((match) => match.analyses.map((analysis) => ({ match, analysis }))),
+    [matches],
+  );
 
   const filteredMatches = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return matches;
+    if (!normalizedQuery) return analysisCards;
 
-    return matches.filter((match) =>
-      [match.title, match.teamName, match.opponentName, match.competition]
+    return analysisCards.filter(({ match, analysis }) =>
+      [match.title, match.teamName, match.opponentName, match.competition, analysis.analysedTeamName]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(normalizedQuery)),
     );
-  }, [matches, query]);
+  }, [analysisCards, query]);
 
   const totals = useMemo(
     () => ({
@@ -46,13 +52,38 @@ export function DashboardClient() {
   }, []);
 
   async function handleDelete(match: MatchSummary) {
-    const confirmed = window.confirm(`Delete "${match.title}" and all associated moments?`);
+    const confirmed = window.confirm(`Delete "${match.title}", all saved perspectives and all associated moments?`);
     if (!confirmed) {
       return;
     }
 
     await apiFetch<void>(`/api/matches/${match.id}`, { method: "DELETE" });
     setMatches((current) => current.filter((item) => item.id !== match.id));
+  }
+
+  async function openPerspective(perspective: MatchAnalysisPerspective) {
+    if (!openingMatch || savingPerspective) return;
+    setSavingPerspective(perspective);
+    setError(null);
+    try {
+      const analysis = await apiFetch<MatchAnalysisRecord>(`/api/matches/${openingMatch.id}/analyses`, {
+        method: "POST",
+        body: JSON.stringify({ perspective }),
+      });
+      const matchId = openingMatch.id;
+      setMatches((current) => current.map((match) => match.id === matchId ? {
+        ...match,
+        analyses: match.analyses.some((item) => item.id === analysis.id)
+          ? match.analyses
+          : [...match.analyses, analysis],
+      } : match));
+      setOpeningMatch(null);
+      router.push(`/analysis/${matchId}?perspective=${perspective}`);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "Could not save the analysis perspective.");
+    } finally {
+      setSavingPerspective(null);
+    }
   }
 
   return (
@@ -126,8 +157,8 @@ export function DashboardClient() {
             No matches found for “{query}”.
           </Panel>
         ) : (
-          filteredMatches.map((match) => (
-            <Panel key={match.id} className="flex min-h-60 flex-col justify-between overflow-hidden">
+          filteredMatches.map(({ match, analysis }) => (
+            <Panel key={analysis.id} className="flex min-h-60 flex-col justify-between overflow-hidden">
               <div className="p-4">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
@@ -136,9 +167,7 @@ export function DashboardClient() {
                       {match.teamName ? `${match.teamName} vs ${match.opponentName}` : match.opponentName}
                     </p>
                   </div>
-                  <Badge className="shrink-0 border-cyan-300/20 bg-cyan-300/10 text-cyan-100">
-                    {match.momentCount} {match.momentCount === 1 ? "moment" : "moments"}
-                  </Badge>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5"><Badge className="border-cyan-300/25 bg-cyan-300/10 text-cyan-100">Analysing: {analysis.analysedTeamName}</Badge><span className="text-[10px] text-slate-500">{match.momentCount} {match.momentCount === 1 ? "moment" : "moments"}</span></div>
                 </div>
 
                 <div className="mt-4 grid gap-2 text-sm text-slate-400">
@@ -188,19 +217,19 @@ export function DashboardClient() {
             </div>
             <div className="grid gap-3 p-5 sm:grid-cols-2">
               {openingMatch.teamName ? (
-                <button type="button" className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08]" onClick={() => router.push(`/analysis/${openingMatch.id}?perspective=team`)}>
+                <button type="button" disabled={Boolean(savingPerspective)} className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08] disabled:cursor-wait disabled:opacity-60" onClick={() => void openPerspective("team")}>
                   <span className="text-xs uppercase tracking-[.16em] text-slate-500">Analyse as opponent</span>
                   <span className="mt-2 flex items-center justify-between gap-3 text-lg font-semibold text-white"><span className="truncate">{openingMatch.teamName}</span><ArrowRight size={18} className="shrink-0 text-cyan-300 transition group-hover:translate-x-1" /></span>
                   <span className="mt-2 block text-xs leading-5 text-slate-500">Organization, transitions, set pieces and results are shown in the reversed perspective.</span>
                 </button>
               ) : null}
-              <button type="button" className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08]" onClick={() => router.push(`/analysis/${openingMatch.id}?perspective=opponent`)}>
+              <button type="button" disabled={Boolean(savingPerspective)} className="group rounded-lg border border-white/10 bg-white/[.035] p-4 text-left transition hover:border-cyan-300/45 hover:bg-cyan-300/[.08] disabled:cursor-wait disabled:opacity-60" onClick={() => void openPerspective("opponent")}>
                 <span className="text-xs uppercase tracking-[.16em] text-slate-500">Analyse as opponent</span>
                 <span className="mt-2 flex items-center justify-between gap-3 text-lg font-semibold text-white"><span className="truncate">{openingMatch.opponentName}</span><ArrowRight size={18} className="shrink-0 text-cyan-300 transition group-hover:translate-x-1" /></span>
                 <span className="mt-2 block text-xs leading-5 text-slate-500">Uses the original perspective in which the moments are stored.</span>
               </button>
             </div>
-            <p className="border-t border-white/10 px-5 py-3 text-xs text-slate-500">This choice does not duplicate or change the saved analysis. You can choose again whenever you reopen the match.</p>
+            <p className="border-t border-white/10 px-5 py-3 text-xs text-slate-500">This perspective is saved for Dashboard and Reports. Both perspectives share the same video and moments, so no cloud file is duplicated.</p>
           </Panel>
         </div>
       ) : null}

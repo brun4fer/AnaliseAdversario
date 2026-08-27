@@ -20,6 +20,7 @@ model User {
   clubs Club[]
   competitions Competition[]
   matches Match[]
+  matchAnalyses MatchAnalysis[]
   momentTypes MomentType[]
   subMomentTypes SubMomentType[]
   shortcuts ShortcutSetting[]
@@ -95,6 +96,7 @@ model Match {
 
   videos  Video[]
   moments Moment[]
+  analyses MatchAnalysis[]
   season Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
   homeClub Club? @relation("HomeClub", fields: [homeClubId], references: [id], onDelete: SetNull)
   awayClub Club? @relation("AwayClub", fields: [awayClubId], references: [id], onDelete: SetNull)
@@ -106,6 +108,22 @@ model Match {
   @@index([homeClubId])
   @@index([awayClubId])
   @@index([competitionId])
+  @@index([ownerId])
+}
+
+model MatchAnalysis {
+  id          String   @id @default(cuid())
+  matchId     String
+  perspective String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  match   Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  ownerId String?
+  owner   User? @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@unique([matchId, perspective])
+  @@index([matchId])
   @@index([ownerId])
 }
 

@@ -81,9 +81,11 @@ export function displayMoment(
   perspective: AnalysisPerspective,
 ): MomentRecord {
   if (!isReversedPerspective(perspective)) return moment;
+  const momentType = displayMomentType(moment.momentType, allTypes, perspective);
   return {
     ...moment,
-    momentType: displayMomentType(moment.momentType, allTypes, perspective),
+    momentTypeId: momentType.id,
+    momentType,
     outcome: displayOutcome(moment.outcome, perspective),
     subMoments: moment.subMoments.map((subMoment) => ({
       ...subMoment,

@@ -116,6 +116,13 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
   const [resumePrompt, setResumePrompt] = useState(false);
   const [specificTime, setSpecificTime] = useState("");
+
+  useEffect(() => {
+    void apiFetch(`/api/matches/${matchId}/analyses`, {
+      method: "POST",
+      body: JSON.stringify({ perspective }),
+    }).catch((saveError: Error) => setNotice(saveError.message));
+  }, [matchId, perspective]);
   const [seekTime, setSeekTime] = useState("");
   const [pendingSubMoment, setPendingSubMoment] = useState<PendingSubMoment | null>(null);
   const [pendingFieldPoint, setPendingFieldPoint] = useState<Point | null>(null);

@@ -6,7 +6,8 @@ import { Archive, CheckSquare, FileVideo, ListVideo, Loader2, Pause, Pencil, Pla
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { Badge, Button, FieldLabel, Panel, Select } from "@/components/ui";
-import type { MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMomentInput } from "@/lib/domain";
+import type { MatchAnalysisRecord, MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMomentInput } from "@/lib/domain";
+import { canonicalOutcome, displayMoment, shortcutSourceTypeId } from "@/lib/analysis-perspective";
 import { type ExportDirectory, isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
@@ -16,7 +17,8 @@ import { getSubMomentTypesForMoment } from "@/lib/taxonomy";
 import { formatPreciseTime } from "@/lib/time";
 import { downloadBlob, exportQualityOptions, type ExportQuality } from "@/lib/video-export";
 
-type ReportClip = { match: MatchDetail; moment: MomentRecord };
+type ReportAnalysis = { match: MatchSummary; analysis: MatchAnalysisRecord };
+type ReportClip = { match: MatchDetail; moment: MomentRecord; analysis: MatchAnalysisRecord };
 type PlayingClip = { index: number; url: string; autoplay: boolean };
 type PendingOperation = "play" | "export";
 
@@ -48,6 +50,19 @@ export function ReportsClient() {
   const [videoPreparationError, setVideoPreparationError] = useState<string | null>(null);
   const [editingClip, setEditingClip] = useState<ReportClip | null>(null);
 
+  const analyses = useMemo<ReportAnalysis[]>(
+    () => matches.flatMap((match) => match.analyses.map((analysis) => ({ match, analysis }))),
+    [matches],
+  );
+  const selectedAnalyses = useMemo(
+    () => analyses.filter(({ analysis }) => selectedIds.includes(analysis.id)),
+    [analyses, selectedIds],
+  );
+  const selectedMatchIds = useMemo(
+    () => [...new Set(selectedAnalyses.map(({ match }) => match.id))],
+    [selectedAnalyses],
+  );
+
   useEffect(() => {
     Promise.all([apiFetch<MatchSummary[]>("/api/matches"), apiFetch<SettingsPayload>("/api/settings")])
       .then(([matchRows, settingsData]) => { setMatches(matchRows); setSettings(settingsData); })
@@ -56,25 +71,34 @@ export function ReportsClient() {
 
   useEffect(() => {
     let cancelled = false;
-    if (selectedIds.length === 0) { setDetails([]); return; }
+    if (selectedMatchIds.length === 0) { setDetails([]); return; }
     setLoadingDetails(true);
-    Promise.all(selectedIds.map((id) => apiFetch<MatchDetail>(`/api/matches/${id}`)))
+    Promise.all(selectedMatchIds.map((id) => apiFetch<MatchDetail>(`/api/matches/${id}`)))
       .then((rows) => { if (!cancelled) setDetails(rows); })
       .catch((error: Error) => { if (!cancelled) setNotice(error.message); })
       .finally(() => { if (!cancelled) setLoadingDetails(false); });
     return () => { cancelled = true; };
-  }, [selectedIds]);
+  }, [selectedMatchIds]);
 
   useEffect(() => () => { if (playingUrlRef.current?.startsWith("blob:")) URL.revokeObjectURL(playingUrlRef.current); }, []);
 
-  const teamNames = useMemo(() => [...new Set(matches.flatMap((match) => [match.teamName, match.opponentName]).filter(Boolean) as string[])].sort((a, b) => a.localeCompare(b)), [matches]);
-  const visibleMatches = useMemo(() => matches.filter((match) => !teamFilter || match.teamName === teamFilter || match.opponentName === teamFilter), [matches, teamFilter]);
+  const teamNames = useMemo(() => [...new Set(analyses.map(({ analysis }) => analysis.analysedTeamName))].sort((a, b) => a.localeCompare(b)), [analyses]);
+  const visibleMatches = useMemo(() => analyses.filter(({ analysis }) => !teamFilter || analysis.analysedTeamName === teamFilter), [analyses, teamFilter]);
   const selectedMomentType = settings?.momentTypes.find((type) => type.id === momentTypeId) || null;
   const availableSubmomentTypes = useMemo(() => getSubMomentTypesForMoment(settings?.subMomentTypes || [], selectedMomentType), [selectedMomentType, settings?.subMomentTypes]);
-  const clips = useMemo<ReportClip[]>(() => details.flatMap((match) => match.moments
-    .filter((moment) => !momentTypeId || moment.momentTypeId === momentTypeId)
-    .filter((moment) => !subMomentTypeId || moment.subMoments.some((sub) => sub.subMomentTypeId === subMomentTypeId))
-    .map((moment) => ({ match, moment }))), [details, momentTypeId, subMomentTypeId]);
+  const clips = useMemo<ReportClip[]>(() => {
+    if (!settings) return [];
+    const detailById = new Map(details.map((match) => [match.id, match]));
+    return selectedAnalyses.flatMap(({ match: summary, analysis }) => {
+      const match = detailById.get(summary.id);
+      if (!match) return [];
+      return match.moments
+        .map((moment) => displayMoment(moment, settings.momentTypes, analysis.perspective))
+        .filter((moment) => !momentTypeId || moment.momentTypeId === momentTypeId)
+        .filter((moment) => !subMomentTypeId || moment.subMoments.some((sub) => sub.subMomentTypeId === subMomentTypeId))
+        .map((moment) => ({ match, moment, analysis }));
+    });
+  }, [details, momentTypeId, selectedAnalyses, settings, subMomentTypeId]);
 
   function toggleMatch(id: string) { setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
   function changeMomentFilter(id: string) { setMomentTypeId(id); setSubMomentTypeId(""); stopPlayback(); }
@@ -104,8 +128,13 @@ export function ReportsClient() {
     setPlaying(null);
   }
 
-  async function updateReportMoment(momentId: string, input: UpdateMomentInput) {
-    const saved = await apiFetch<MomentRecord>(`/api/moments/${momentId}`, { method: "PATCH", body: JSON.stringify(input) });
+  async function updateReportMoment(clip: ReportClip, input: UpdateMomentInput) {
+    const canonicalInput: UpdateMomentInput = {
+      ...input,
+      ...(input.momentTypeId && settings ? { momentTypeId: shortcutSourceTypeId(input.momentTypeId, settings.momentTypes, clip.analysis.perspective) } : {}),
+      ...(input.outcome !== undefined ? { outcome: canonicalOutcome(input.outcome, clip.analysis.perspective) } : {}),
+    };
+    const saved = await apiFetch<MomentRecord>(`/api/moments/${clip.moment.id}`, { method: "PATCH", body: JSON.stringify(canonicalInput) });
     setDetails((current) => current.map((match) => ({
       ...match,
       moments: match.moments.map((moment) => moment.id === saved.id ? saved : moment),
@@ -116,7 +145,7 @@ export function ReportsClient() {
 
   async function toggleReportOutcome(clip: ReportClip, outcome: "positive" | "negative") {
     try {
-      await updateReportMoment(clip.moment.id, { outcome: clip.moment.outcome === outcome ? null : outcome });
+      await updateReportMoment(clip, { outcome: clip.moment.outcome === outcome ? null : outcome });
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Could not classify the moment.");
     }
@@ -253,8 +282,8 @@ export function ReportsClient() {
     setExporting(true); setExportStatus("Starting export..."); stopPlayback(); setNotice(null);
     const zip = directory ? null : new JSZip();
     const missing = new Set<string>();
-    const reportRoot = `Report-${selectedIds.length}-matches-${clips.length}-clips`;
-    const indexRows: string[][] = [["match", "moment", "start_seconds", "end_seconds", "submoments", "files"]];
+    const reportRoot = `Report-${selectedIds.length}-analyses-${clips.length}-clips`;
+    const indexRows: string[][] = [["match", "analysed_team", "moment", "start_seconds", "end_seconds", "submoments", "files"]];
     try {
       const byMatch = new Map<string, ReportClip[]>();
       for (const clip of clips) byMatch.set(clip.match.id, [...(byMatch.get(clip.match.id) || []), clip]);
@@ -269,7 +298,7 @@ export function ReportsClient() {
             const clip = matchClips[index]; completed += 1; setExportStatus(`Exporting ${completed} of ${clips.length}: ${clip.match.title}`);
             const exported = await session.exportMoment({
               sourceUrlFallback: exportVideo.url,
-              match: clip.match,
+              match: { ...clip.match, title: `${clip.match.title} - ${clip.analysis.analysedTeamName}`, opponentName: clip.analysis.analysedTeamName },
               moment: clip.moment,
               quality: exportQuality,
               onStatus: (status) => setExportStatus(`${completed} of ${clips.length}: ${status}`),
@@ -281,7 +310,7 @@ export function ReportsClient() {
 
             const indexedFileName = `${String(completed).padStart(3, "0")}-${exported.fileName}`;
             const relativePaths = submomentFolders.map((submoment) =>
-              `${safeName(clip.moment.momentType.name)}/${safeName(submoment)}/${indexedFileName}`,
+              `${safeName(clip.analysis.analysedTeamName)}/${safeName(clip.moment.momentType.name)}/${safeName(submoment)}/${indexedFileName}`,
             );
             for (let folderIndex = 0; folderIndex < relativePaths.length; folderIndex += 1) {
               const relativePath = relativePaths[folderIndex];
@@ -293,6 +322,7 @@ export function ReportsClient() {
             }
             indexRows.push([
               clip.match.title,
+              clip.analysis.analysedTeamName,
               clip.moment.momentType.name,
               String(clip.moment.startTimeSeconds),
               String(clip.moment.endTimeSeconds),
@@ -311,7 +341,7 @@ export function ReportsClient() {
         setExportStatus("Preparing the ZIP...");
         zip.file("report-index.csv", indexBlob);
         const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
-        downloadBlob(blob, `Report-${selectedIds.length}-matches-${completed}-clips.zip`);
+        downloadBlob(blob, `Report-${selectedIds.length}-analyses-${completed}-clips.zip`);
       }
       setNotice(missing.size ? `Export complete. Missing videos: ${[...missing].join(", ")}.` : `${completed} clips exported successfully.`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not export the report."); }
@@ -324,18 +354,18 @@ export function ReportsClient() {
     {notice && <div className="flex items-start justify-between gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><span>{notice}</span><button onClick={() => setNotice(null)}><X size={16} /></button></div>}
     {exporting && <div className="flex items-center gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><Loader2 className="shrink-0 animate-spin" size={17} /><span>{exportStatus || "Exporting clips..."}</span></div>}
     <div className="grid gap-5 xl:grid-cols-[23rem_minmax(0,1fr)]">
-      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter matches by team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="flex gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map((match) => match.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.map((match) => { const checked = selectedIds.includes(match.id); return <button key={match.id} onClick={() => toggleMatch(match.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block text-xs text-slate-500">{match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
+      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="flex gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
       <div className="space-y-4">
         <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedIds.length} matches selected</p></div><div className="flex flex-wrap gap-2"><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={clips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : "Export clips"}</Button></div></Panel>
+        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedIds.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={clips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : "Export clips"}</Button></div></Panel>
         {playing && clips[playing.index] ? <div className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-          <Panel className="self-start overflow-hidden"><div className="aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div><div className="flex items-center justify-between gap-3 border-t border-white/10 p-3"><div className="min-w-0"><p className="truncate text-sm text-white">{clips[playing.index].match.title}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div><Button size="icon" variant="primary" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause /> : <Play />}</Button></div></Panel>
-          <div className="relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={`${clip.match.id}-${clip.moment.id}`} clip={clip} active={playing?.index === index} compact onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
-        </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one match to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={`${clip.match.id}-${clip.moment.id}`} clip={clip} active={false} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
+          <Panel className="self-start overflow-hidden"><div className="aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div><div className="flex items-center justify-between gap-3 border-t border-white/10 p-3"><div className="min-w-0"><p className="truncate text-sm text-white">{clips[playing.index].match.title} · Analysing: {clips[playing.index].analysis.analysedTeamName}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div><Button size="icon" variant="primary" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause /> : <Play />}</Button></div></Panel>
+          <div className="relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={`${clip.analysis.id}-${clip.moment.id}`} clip={clip} active={playing?.index === index} compact onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
+        </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one saved analysis to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={`${clip.analysis.id}-${clip.moment.id}`} clip={clip} active={false} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
       </div>
     </div>
     {pendingOperation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"><Panel className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-cyan-300/30 bg-pitch-950 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-white/10 p-5"><div><p className="text-xs uppercase tracking-[.2em] text-cyan-200/80">Prepare {pendingOperation === "play" ? "playback" : "export"}</p><h2 className="mt-2 text-xl font-semibold text-white">Add missing videos</h2><p className="mt-2 text-sm text-slate-400">The action starts automatically as soon as all videos are available.</p></div><Button size="icon" variant="ghost" aria-label="Close" onClick={() => { pendingExportDirectoryRef.current = null; setPendingOperation(null); setMissingVideos([]); }}><X size={17} /></Button></div><div className="p-5"><label className="mb-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-cyan-300/35 bg-cyan-300/[.06] p-4 text-sm font-medium text-cyan-100 hover:bg-cyan-300/10"><CheckSquare size={17} />Select multiple videos<input type="file" accept="video/*" multiple className="hidden" onChange={(event) => void addSeveralVideos(event.target.files)} /></label>{videoPreparationError && <div className="mb-4 rounded-md border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">{videoPreparationError}</div>}<div className="space-y-2">{missingVideos.map((match) => <div key={match.id} className="flex flex-col gap-3 rounded-md border border-white/10 bg-white/[.035] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-medium text-white">{match.title}</p><p className="mt-1 truncate text-xs text-slate-500">Expected: {match.video?.fileName || "video for this match"}</p></div><label className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[.06] px-3 text-sm text-slate-100 hover:bg-white/[.1]"><FileVideo size={15} />Select video<input type="file" accept="video/*" className="hidden" onChange={(event) => void addVideo(match, event.target.files?.[0])} /></label></div>)}</div></div></Panel></div>}
-    {editingClip && settings ? <MomentEditDialog moment={editingClip.moment} momentTypes={settings.momentTypes} duration={editingClip.match.video?.durationSeconds || 0} onSave={updateReportMoment} onClose={() => setEditingClip(null)} /> : null}
+    {editingClip && settings ? <MomentEditDialog moment={editingClip.moment} momentTypes={settings.momentTypes} duration={editingClip.match.video?.durationSeconds || 0} onSave={(_momentId, input) => updateReportMoment(editingClip, input)} onClose={() => setEditingClip(null)} /> : null}
   </div>;
 }
 
@@ -361,7 +391,7 @@ function ReportClipRow({
       <button type="button" onClick={onPlay} className="flex w-full items-center gap-3 px-3 pb-2 pt-3 text-left">
         <Play size={15} className="shrink-0 text-cyan-200" />
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-white">{clip.match.title}</span>
+          <span className="block truncate text-sm text-white">{clip.match.title} · Analysing: {clip.analysis.analysedTeamName}</span>
           <span className="block truncate text-xs text-slate-500">{clip.moment.momentType.name} · {formatPreciseTime(clip.moment.startTimeSeconds)} – {formatPreciseTime(clip.moment.endTimeSeconds)}</span>
         </span>
         <Badge className="shrink-0">{clip.moment.subMoments.length}{compact ? "" : " sub."}</Badge>

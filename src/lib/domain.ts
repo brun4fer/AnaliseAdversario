@@ -28,6 +28,18 @@ export type MatchRecord = {
 export type MatchSummary = MatchRecord & {
   momentCount: number;
   video: VideoRecord | null;
+  analyses: MatchAnalysisRecord[];
+};
+
+export type MatchAnalysisPerspective = "opponent" | "team";
+
+export type MatchAnalysisRecord = {
+  id: Id;
+  matchId: Id;
+  perspective: MatchAnalysisPerspective;
+  analysedTeamName: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type VideoRecord = {
