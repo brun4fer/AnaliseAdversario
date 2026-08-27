@@ -11,8 +11,8 @@ export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-od", name: "Defensive Organization", code: "DO", color: "#38bdf8", defaultShortcut: "2", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-to", name: "Offensive Transition", code: "OT", color: "#f59e0b", defaultShortcut: "3", createdAt: timestamp, updatedAt: timestamp },
   { id: "mt-td", name: "Defensive Transition", code: "DT", color: "#ef4444", defaultShortcut: "4", createdAt: timestamp, updatedAt: timestamp },
-  { id: "mt-bpd", name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "5", createdAt: timestamp, updatedAt: timestamp },
-  { id: "mt-bpo", name: "Offensive Set Pieces", code: "OSP", color: "#ec4899", defaultShortcut: "6", createdAt: timestamp, updatedAt: timestamp },
+  { id: "mt-bpo", name: "Offensive Set Pieces", code: "OSP", color: "#ec4899", defaultShortcut: "5", createdAt: timestamp, updatedAt: timestamp },
+  { id: "mt-bpd", name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "6", createdAt: timestamp, updatedAt: timestamp },
 ];
 
 const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [

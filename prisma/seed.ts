@@ -11,8 +11,8 @@ const momentTypes = [
   { name: "Defensive Organization", code: "DO", color: "#38bdf8", defaultShortcut: "2" },
   { name: "Offensive Transition", code: "OT", color: "#f59e0b", defaultShortcut: "3" },
   { name: "Defensive Transition", code: "DT", color: "#ef4444", defaultShortcut: "4" },
-  { name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "5" },
-  { name: "Offensive Set Pieces", code: "OSP", color: "#ec4899", defaultShortcut: "6" },
+  { name: "Offensive Set Pieces", code: "OSP", color: "#ec4899", defaultShortcut: "5" },
+  { name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "6" },
 ];
 
 const legacyMomentTypeCodeMappings = [
