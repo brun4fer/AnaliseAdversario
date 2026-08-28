@@ -857,9 +857,9 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto px-2 py-1.5" aria-label="Main moments">
           {momentTypes.map((type) => { const active = activeMoments.some((moment) => moment.momentTypeId === type.id); return <button key={type.id} type="button" onClick={() => toggleMoment(type)} title={`${type.name} · ${getShortcutForMomentType(type.id)}`} className={cn("flex h-11 min-w-[6rem] shrink-0 items-center justify-between gap-2 rounded-md border px-2 text-left transition", active ? "border-cyan-200/70 bg-cyan-300/10 shadow-glow" : "border-white/10 bg-white/[.035] hover:bg-white/[.08]")}><span className="min-w-0"><span className="block truncate text-[9px] font-bold" style={{ color: type.color }}>{type.name}</span><span className={cn("mt-0.5 block text-[8px]", active ? "text-cyan-100" : "text-slate-600")}>{active ? "In progress" : "Click to start"}</span></span><kbd className="rounded border border-white/10 bg-black/25 px-1.5 py-0.5 text-[9px] text-slate-300">{getShortcutForMomentType(type.id)}</kbd></button>; })}
         </div>
-        <div className="flex shrink-0 items-center border-l border-white/10 px-2">
-          <Button size="sm" className="mr-1 h-8 whitespace-nowrap" variant="secondary" disabled={uploading} onClick={openCloudLibrary}><Cloud size={13} />Cloud library</Button>
-          <Button size="sm" className="h-8 whitespace-nowrap" variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{uploading ? `Cancel ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}</Button>
+        <div className="flex shrink-0 items-center border-l border-white/10 px-1.5">
+          <Button size="icon" className="mr-1 h-7 w-7" variant="secondary" disabled={uploading} title="Open cloud library" aria-label="Open cloud library" onClick={openCloudLibrary}><Cloud size={12} /></Button>
+          <Button size="icon" className="h-7 w-7" variant={uploading ? "danger" : "secondary"} title={uploading ? `Cancel upload (${Math.round(uploadProgress * 100)}%)` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"} aria-label={uploading ? "Cancel video upload" : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"} onClick={() => uploading ? uploadAbortRef.current?.abort() : fileInputRef.current?.click()}>{uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}</Button>
         </div>
       </Panel>
 
@@ -988,8 +988,8 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   style={{ background: player.duration ? `linear-gradient(to right, #67e8f9 ${(player.currentTime / player.duration) * 100}%, rgba(255,255,255,.14) ${(player.currentTime / player.duration) * 100}%)` : undefined }}
                 />
               </div>
-              <div className="mt-1.5 flex items-center justify-between gap-2 overflow-x-auto">
-                <div className="flex min-w-max items-center gap-1">
+              <div className="mt-1.5 flex items-center gap-2">
+                <div className="min-w-0 flex-1 overflow-x-auto"><div className="flex min-w-max items-center gap-1">
                   <Button size="icon" className="h-8 w-8" variant="secondary" onClick={() => player.seekBy(-15)} aria-label="Back 15 seconds">
                     <ChevronsLeft size={15} />
                   </Button>
@@ -1015,8 +1015,8 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                     ], ["firstHalfEndSeconds", "1H end", "1H E"], ["secondHalfStartSeconds", "2H start", "2H S"], ["secondHalfEndSeconds", "2H end", "2H E"]] as [PeriodMarkerKey, string, string][]).map(([key, label, short]) => { const seconds = match[key]; return <div key={key} className="flex overflow-hidden rounded-md border border-cyan-300/25"><button type="button" disabled={!player.sourceUrl} title={seconds === null ? `${label}: save current time` : `${label}: go to ${formatTime(seconds)}`} onClick={() => seconds === null ? void setPeriodMarker(key) : player.seekTo(seconds)} className="flex h-8 min-w-[3.5rem] flex-col items-center justify-center bg-cyan-300/[.06] px-1.5 leading-none disabled:opacity-40"><span className="text-[7px] font-bold uppercase tracking-wide text-cyan-200">{short}</span><span className="mt-0.5 font-mono text-[8px] text-slate-300">{seconds === null ? "Set" : formatTime(seconds)}</span></button>{seconds !== null ? <button type="button" disabled={!player.sourceUrl} aria-label={`Replace ${label}`} title={`Replace ${label} with current time`} onClick={() => void setPeriodMarker(key)} className="flex h-8 w-5 items-center justify-center border-l border-cyan-300/20 text-slate-500 hover:text-white"><Clock size={9} /></button> : null}</div>; })}
                   </div>
                   <form className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}><TextInput aria-label="Exact second" className="h-8 w-20 font-mono text-[10px]" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="Second" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} /><Button type="submit" size="sm" className="h-8 px-2 text-[10px]" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go</Button></form>
-                </div>
-                <span className="inline-flex shrink-0 items-center gap-1 font-mono text-xs text-white"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span>
+                </div></div>
+                <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1 font-mono text-xs text-white sm:inline-flex"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8 whitespace-nowrap px-2 text-[10px]" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={13} /></Button></Link></div>
               </div>
               {player.error ? <p className="mt-1.5 rounded-md border border-red-400/30 bg-red-500/10 p-1.5 text-xs text-red-100">{player.error}</p> : null}
             </div>
@@ -1206,7 +1206,6 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         </aside>
       </div>
 
-      <Panel className="flex shrink-0 items-center justify-between gap-3 px-3 py-1.5"><div className="min-w-0"><span className="text-[9px] font-semibold uppercase tracking-[.18em] text-slate-500">Identification</span><span className="ml-2 text-xs font-semibold text-white">Submoments</span></div><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={14} /></Button></Link></Panel>
       <Timeline moments={match.moments.map((moment) => displayMoment(moment, canonicalMomentTypes, perspective))} duration={player.duration || match.video?.durationSeconds || 0} onSelect={reviewMoment} />
 
       {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
