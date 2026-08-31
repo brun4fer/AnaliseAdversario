@@ -61,6 +61,15 @@ export function DashboardClient() {
     setMatches((current) => current.filter((item) => item.id !== match.id));
   }
 
+  function openAnalysis(match: MatchSummary, analysis: MatchAnalysisRecord) {
+    if (match.analyses.length > 1) {
+      router.push(`/analysis/${match.id}?perspective=${analysis.perspective}`);
+      return;
+    }
+
+    setOpeningMatch(match);
+  }
+
   async function openPerspective(perspective: MatchAnalysisPerspective) {
     if (!openingMatch || savingPerspective) return;
     setSavingPerspective(perspective);
@@ -185,7 +194,7 @@ export function DashboardClient() {
 
               <div className="flex items-center gap-2 border-t border-white/10 bg-black/10 p-3">
                 <div className="min-w-0 flex-1">
-                  <Button variant="primary" className="w-full" onClick={() => setOpeningMatch(match)}>
+                  <Button variant="primary" className="w-full" onClick={() => openAnalysis(match, analysis)}>
                     <Play size={16} />
                     Open analysis
                   </Button>
