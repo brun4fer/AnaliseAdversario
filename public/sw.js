@@ -1,4 +1,4 @@
-const CACHE_NAME = "opponent-video-analysis-v3";
+const CACHE_NAME = "opponent-video-analysis-v4";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/icons/icon-192.svg", "/icons/icon-512.svg"];
 
 self.addEventListener("install", (event) => {
