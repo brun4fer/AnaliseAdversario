@@ -1,0 +1,15 @@
+ALTER TABLE "User"
+ADD COLUMN "globalAccessPasswordHash" TEXT,
+ADD COLUMN "globalAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "dashboardAccessPasswordHash" TEXT,
+ADD COLUMN "dashboardAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "newMatchAccessPasswordHash" TEXT,
+ADD COLUMN "newMatchAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "reportsAccessPasswordHash" TEXT,
+ADD COLUMN "reportsAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "maintenanceAccessPasswordHash" TEXT,
+ADD COLUMN "maintenanceAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "settingsAccessPasswordHash" TEXT,
+ADD COLUMN "settingsAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "analysisAccessPasswordHash" TEXT,
+ADD COLUMN "analysisAccessPasswordVersion" INTEGER NOT NULL DEFAULT 0;

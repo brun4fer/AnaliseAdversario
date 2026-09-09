@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
-import { requireCurrentUserId } from "@/lib/auth";
+import { requireAreaUser, requireCurrentUserId } from "@/lib/auth";
 type Resource = "seasons" | "clubs" | "competitions";
 const valid = (value: string): value is Resource => ["seasons", "clubs", "competitions"].includes(value);
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
+  await requireAreaUser("maintenance");
   const { resource, id } = await params;
   if (!valid(resource)) return Response.json({ error: "Invalid resource." }, { status: 404 });
   const ownerId = await requireCurrentUserId();
@@ -25,6 +26,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ re
 }
 
 export async function DELETE(_: Request, { params }: { params: Promise<{ resource: string; id: string }> }) {
+  await requireAreaUser("maintenance");
   const { resource, id } = await params;
   if (!valid(resource)) return Response.json({ error: "Invalid resource." }, { status: 404 });
   const ownerId = await requireCurrentUserId();

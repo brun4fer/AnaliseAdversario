@@ -14,7 +14,7 @@ export function noContent() {
 
 export function handleRouteError(error: unknown) {
   const message = error instanceof Error ? error.message : "Unexpected error.";
-  const status = message.toLowerCase().includes("not found") ? 404 : 400;
+  const status = typeof error === "object" && error !== null && "status" in error && typeof error.status === "number" ? error.status : message.toLowerCase().includes("not found") ? 404 : 400;
   return NextResponse.json({ error: message }, { status });
 }
 

@@ -2,25 +2,40 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, BarChart3, FileBarChart, Goal, LogOut, Settings, Trophy, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ArrowLeft, BarChart3, FileBarChart, Goal, LockKeyhole, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
+import { ManagementAccessDialog } from "@/components/management-access-dialog";
 import { PwaInstallButton } from "@/components/pwa-install-button";
+import { accessAreaForPath, type AccessArea } from "@/lib/access-areas";
+import { apiFetch } from "@/lib/http";
 import { cn } from "@/lib/cn";
 import { APP_NAME } from "@/lib/taxonomy";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: BarChart3 },
-  { href: "/matches/new", label: "New match", icon: Trophy },
-  { href: "/reports", label: "Reports", icon: FileBarChart },
-  { href: "/maintenance", label: "Maintenance", icon: Wrench },
-  { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/", label: "Dashboard", icon: BarChart3, area: "dashboard" as const },
+  { href: "/matches/new", label: "New match", icon: Trophy, area: "newMatch" as const },
+  { href: "/reports", label: "Reports", icon: FileBarChart, area: "reports" as const },
+  { href: "/maintenance", label: "Maintenance", icon: Wrench, area: "maintenance" as const },
+  { href: "/settings", label: "Settings", icon: Settings, area: "settings" as const },
 ];
+type Account = { accessControl: { globalUnlocked: boolean; unlockedAreas: AccessArea[] } };
+function unlocked(account: Account, area: AccessArea | null) { return !area || account.accessControl.globalUnlocked || account.accessControl.unlockedAreas.includes(area); }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const [account, setAccount] = useState<Account | null>(null);
+  const [pendingArea, setPendingArea] = useState<AccessArea | null>(null);
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const currentArea = accessAreaForPath(pathname);
+  const isPublic = pathname === "/login" || pathname === "/register" || pathname === "/change-password";
+  useEffect(() => {
+    if (isPublic) return;
+    apiFetch<Account>("/api/account").then((next) => { setAccount(next); if (!unlocked(next, currentArea)) setPendingArea(currentArea); }).catch(() => undefined);
+  }, [currentArea, isPublic]);
   const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname) || pathname.startsWith("/analysis/");
-  if (pathname === "/login" || pathname === "/register" || pathname === "/change-password") return <main className="min-h-screen">{children}</main>;
+  if (isPublic) return <main className="min-h-screen">{children}</main>;
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }
 
@@ -50,6 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    onClick={(event) => { if (account && !unlocked(account, item.area)) { event.preventDefault(); setPendingArea(item.area); setPendingHref(item.href); } }}
                     className={cn(
                       "inline-flex h-9 items-center gap-2 rounded-md px-3 text-sm text-slate-300 transition hover:bg-white/[0.08] hover:text-white",
                       active && "bg-cyan-300/12 text-cyan-100 ring-1 ring-cyan-300/20",
@@ -57,6 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   >
                     <Icon size={16} />
                     <span className="hidden sm:inline">{item.label}</span>
+                    {account && !unlocked(account, item.area) ? <LockKeyhole size={10} className="text-amber-300"/> : null}
                   </Link>
                 );
               })}
@@ -78,6 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ) : null}
         {children}
       </main>
+      {account && pendingArea ? <ManagementAccessDialog area={pendingArea} canDismiss={unlocked(account, currentArea)} onDismiss={() => { setPendingArea(null); setPendingHref(null); }} onUnlocked={(accessControl) => { setAccount({ ...account, accessControl }); const target = pendingHref; setPendingArea(null); setPendingHref(null); if (target && target !== pathname) window.location.href = target; else window.location.reload(); }}/>: null}
     </div>
   );
 }

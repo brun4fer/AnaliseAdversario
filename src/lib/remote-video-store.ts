@@ -25,8 +25,12 @@ export type CloudVideoAsset = {
 type UploadStatus = { phase: "preparing" | "uploading" | "finishing"; progress: number; detail: string };
 type UploadedPart = { partNumber: number; etag: string; size?: number };
 
-export async function getRemoteVideoUrl(matchId: string) {
-  return apiFetch<{ url: string; expiresAt: string }>(`/api/matches/${matchId}/video`);
+export async function getRemoteVideoUrl(matchId: string, area: "reports" | "analysis") {
+  return apiFetch<{ url: string; expiresAt: string }>(`/api/matches/${matchId}/video?area=${area}`);
+}
+
+export async function getRemoteVideoDownloadUrl(matchId: string) {
+  return apiFetch<{ url: string; expiresAt: string }>(`/api/matches/${matchId}/video?area=reports&download=1`);
 }
 
 export async function getCloudVideoLibrary() {

@@ -1,6 +1,7 @@
 import { created, handleRouteError, readJson } from "@/lib/api-response";
 import { saveMatchAnalysis } from "@/lib/data-store";
 import type { MatchAnalysisPerspective } from "@/lib/domain";
+import { requireAreaUser } from "@/lib/auth";
 
 type Context = {
   params: Promise<{ matchId: string }>;
@@ -8,6 +9,7 @@ type Context = {
 
 export async function POST(request: Request, context: Context) {
   try {
+    await requireAreaUser(["dashboard", "analysis"]);
     const { matchId } = await context.params;
     const body = await readJson<{ perspective?: MatchAnalysisPerspective }>(request);
     if (body.perspective !== "opponent" && body.perspective !== "team") {

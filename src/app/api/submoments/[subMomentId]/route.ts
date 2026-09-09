@@ -1,6 +1,7 @@
 import { handleRouteError, noContent, ok, readJson } from "@/lib/api-response";
 import { deleteSubMoment, updateSubMoment } from "@/lib/data-store";
 import type { UpdateSubMomentInput } from "@/lib/domain";
+import { requireAreaUser } from "@/lib/auth";
 
 type Context = {
   params: Promise<{ subMomentId: string }>;
@@ -8,6 +9,7 @@ type Context = {
 
 export async function PATCH(request: Request, context: Context) {
   try {
+    await requireAreaUser("analysis");
     const { subMomentId } = await context.params;
     const body = await readJson<UpdateSubMomentInput>(request);
     return ok(await updateSubMoment(subMomentId, body));
@@ -18,6 +20,7 @@ export async function PATCH(request: Request, context: Context) {
 
 export async function DELETE(_request: Request, context: Context) {
   try {
+    await requireAreaUser("analysis");
     const { subMomentId } = await context.params;
     await deleteSubMoment(subMomentId);
     return noContent();

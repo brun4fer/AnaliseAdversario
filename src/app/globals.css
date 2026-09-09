@@ -7,6 +7,16 @@
   background: #061111;
 }
 
+[data-video-workspace]:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  padding: .5rem;
+  overflow: auto;
+  background: #061111;
+}
+
+[data-video-workspace]:fullscreen > * { min-height: 0; }
+
 * {
   box-sizing: border-box;
 }

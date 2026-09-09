@@ -1,10 +1,10 @@
 import { handleRouteError, ok } from "@/lib/api-response";
-import { requireCurrentUser } from "@/lib/auth";
+import { requireAreaUser } from "@/lib/auth";
 import { claimMediaLinkToken, createMediaLinkToken, getMediaLinkStatus } from "@/lib/media-link";
 
 export async function GET() {
   try {
-    return ok(await getMediaLinkStatus(await requireCurrentUser()));
+    return ok(await getMediaLinkStatus((await requireAreaUser("settings")).user));
   } catch (error) {
     return handleRouteError(error);
   }
@@ -12,7 +12,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const account = await requireCurrentUser();
+    const account = (await requireAreaUser("settings")).user;
     const body = await request.json();
     if (body.action === "create") return ok(await createMediaLinkToken(account), { status: 201 });
     if (body.action === "claim") return ok(await claimMediaLinkToken(account, typeof body.token === "string" ? body.token : ""));

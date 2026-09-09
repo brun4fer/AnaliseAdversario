@@ -5,6 +5,7 @@ import { Plus, Save, Trash2 } from "lucide-react";
 
 import { Button, FieldLabel, Panel, TextInput } from "@/components/ui";
 import { MediaLibraryLinkPanel } from "@/components/media-library-link-panel";
+import { ManagementPasswordPanel } from "@/components/management-password-panel";
 import type { MomentTypeRecord, SettingsPayload, ShortcutSettingRecord, SubMomentTypeRecord } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { normalizeShortcutFromEvent } from "@/lib/keyboard";
@@ -68,6 +69,7 @@ export function SettingsClient() {
         </p>
       </header>
 
+      <ManagementPasswordPanel />
       <MediaLibraryLinkPanel />
 
       <div className="grid gap-5 xl:grid-cols-[24rem_1fr]">

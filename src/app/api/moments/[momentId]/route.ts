@@ -1,6 +1,7 @@
 import { handleRouteError, noContent, ok, readJson } from "@/lib/api-response";
 import { deleteMoment, updateMoment } from "@/lib/data-store";
 import type { UpdateMomentInput } from "@/lib/domain";
+import { requireAreaUser } from "@/lib/auth";
 
 type Context = {
   params: Promise<{ momentId: string }>;
@@ -8,6 +9,7 @@ type Context = {
 
 export async function PATCH(request: Request, context: Context) {
   try {
+    await requireAreaUser(["analysis", "reports"]);
     const { momentId } = await context.params;
     const body = await readJson<UpdateMomentInput>(request);
     return ok(await updateMoment(momentId, body));
@@ -18,6 +20,7 @@ export async function PATCH(request: Request, context: Context) {
 
 export async function DELETE(_request: Request, context: Context) {
   try {
+    await requireAreaUser(["analysis", "reports"]);
     const { momentId } = await context.params;
     await deleteMoment(momentId);
     return noContent();

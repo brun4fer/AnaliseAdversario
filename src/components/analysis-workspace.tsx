@@ -32,6 +32,7 @@ import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
+import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-controls";
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { cn } from "@/lib/cn";
@@ -97,6 +98,8 @@ function createTemporaryId() {
 
 export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; perspective: AnalysisPerspective }) {
   const player = useVideoPlayer();
+  const workspaceRef = useRef<HTMLDivElement | null>(null);
+  useVideoKeyboardSeek(player.videoRef, player.seekTo, Boolean(player.sourceUrl));
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const uploadAbortRef = useRef<AbortController | null>(null);
   const [match, setMatch] = useState<MatchDetail | null>(null);
@@ -145,7 +148,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         setMatch(matchPayload);
         setSettings(settingsPayload);
         if (matchPayload.video?.storageStatus === "READY") {
-          const remote = await getRemoteVideoUrl(matchId).catch(() => null);
+          const remote = await getRemoteVideoUrl(matchId, "analysis").catch(() => null);
           if (active && remote) {
             player.loadUrl(remote.url);
             return;
@@ -620,7 +623,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
     setCloudError(null);
     try {
       await attachCloudVideo(matchId, asset.id);
-      const [remote, savedMatch] = await Promise.all([getRemoteVideoUrl(matchId), apiFetch<MatchDetail>(`/api/matches/${matchId}`)]);
+      const [remote, savedMatch] = await Promise.all([getRemoteVideoUrl(matchId, "analysis"), apiFetch<MatchDetail>(`/api/matches/${matchId}`)]);
       player.loadUrl(remote.url);
       setMatch(savedMatch);
       setCloudLibraryOpen(false);
@@ -674,7 +677,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       return { source: player.file as File | string, url: player.sourceUrl };
     }
     if (!match || match.video?.storageStatus !== "READY") return null;
-    const remote = await getRemoteVideoUrl(match.id).catch(() => null);
+    const remote = await getRemoteVideoUrl(match.id, "analysis").catch(() => null);
     return remote ? { source: remote.url as File | string, url: remote.url } : null;
   }
 
@@ -863,7 +866,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         </div>
       </Panel>
 
-      <div className="grid min-h-0 flex-1 items-stretch gap-2 xl:grid-cols-[18rem_minmax(0,1fr)]">
+      <div ref={workspaceRef} data-video-workspace className="grid min-h-0 flex-1 items-stretch gap-2 xl:grid-cols-[18rem_minmax(0,1fr)]">
         <div className="relative min-h-48 xl:min-h-0">
         <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
           <div className="border-b border-white/10 px-3 py-3">
@@ -1016,7 +1019,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   </div>
                   <form className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}><TextInput aria-label="Exact second" className="h-8 w-20 font-mono text-[10px]" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="Second" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} /><Button type="submit" size="sm" className="h-8 px-2 text-[10px]" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go</Button></form>
                 </div></div>
-                <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1 font-mono text-xs text-white sm:inline-flex"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8 whitespace-nowrap px-2 text-[10px]" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={13} /></Button></Link></div>
+                <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1 font-mono text-xs text-white sm:inline-flex"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span><VideoFullscreenButton targetRef={workspaceRef}/><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8 whitespace-nowrap px-2 text-[10px]" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={13} /></Button></Link></div>
               </div>
               {player.error ? <p className="mt-1.5 rounded-md border border-red-400/30 bg-red-500/10 p-1.5 text-xs text-red-100">{player.error}</p> : null}
             </div>

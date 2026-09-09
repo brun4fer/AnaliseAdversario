@@ -1,19 +1,24 @@
 import { handleRouteError, ok, readJson } from "@/lib/api-response";
-import { requireCurrentUser } from "@/lib/auth";
+import { requireAreaUser } from "@/lib/auth";
 import { upsertVideoMetadata } from "@/lib/data-store";
 import type { VideoMetadataInput } from "@/lib/domain";
 import { removeMediaReference } from "@/lib/media-library";
 import { mediaPrisma } from "@/lib/media-prisma";
-import { abortMediaMultipartUpload, createMediaPlaybackUrl } from "@/lib/media-r2";
+import { abortMediaMultipartUpload, createMediaDownloadUrl, createMediaPlaybackUrl } from "@/lib/media-r2";
 import { ensureMediaWorkspace } from "@/lib/media-workspace";
 import { prisma } from "@/lib/prisma";
-import { abortMultipartUpload, createPlaybackUrl, deleteR2Object } from "@/lib/r2";
+import { abortMultipartUpload, createDownloadUrl, createPlaybackUrl, deleteR2Object } from "@/lib/r2";
 
 type Context = { params: Promise<{ matchId: string }> };
 
-export async function GET(_request: Request, context: Context) {
+export async function GET(request: Request, context: Context) {
   try {
-    const account = await requireCurrentUser();
+    const url = new URL(request.url);
+    const area = url.searchParams.get("area");
+    if (area !== "reports" && area !== "analysis") return Response.json({ error: "Invalid video access area." }, { status: 400 });
+    const download = url.searchParams.get("download") === "1";
+    if (download && area !== "reports") return Response.json({ error: "Full match downloads are only available in Reports." }, { status: 403 });
+    const account = (await requireAreaUser(area)).user;
     const { matchId } = await context.params;
     const video = await prisma.video.findFirst({ where: { matchId, match: { ownerId: account.id } }, orderBy: { updatedAt: "desc" } });
     if (!video) return Response.json({ error: "This match does not have a video." }, { status: 404 });
@@ -22,22 +27,22 @@ export async function GET(_request: Request, context: Context) {
       const { mediaWorkspace } = await ensureMediaWorkspace(account);
       const asset = await mediaPrisma.mediaAsset.findFirst({ where: { id: video.mediaAssetId, mediaWorkspaceId: mediaWorkspace.id, storageStatus: "READY" } });
       if (!asset) return Response.json({ error: "The shared cloud video is no longer available." }, { status: 404 });
-      return ok(createMediaPlaybackUrl(asset.storageKey));
+      return ok(download ? createMediaDownloadUrl(asset.storageKey, video.fileName) : createMediaPlaybackUrl(asset.storageKey));
     }
     if (!video.storageKey) return Response.json({ error: "The video has not been uploaded to Cloudflare R2 yet." }, { status: 404 });
-    return ok(createPlaybackUrl(video.storageKey));
+    return ok(download ? createDownloadUrl(video.storageKey, video.fileName) : createPlaybackUrl(video.storageKey));
   } catch (error) { return handleRouteError(error); }
 }
 
 // Retained for older clients that only register local video metadata.
 export async function PUT(request: Request, context: Context) {
-  try { return ok(await upsertVideoMetadata((await context.params).matchId, await readJson<VideoMetadataInput>(request))); }
+  try { await requireAreaUser("analysis"); return ok(await upsertVideoMetadata((await context.params).matchId, await readJson<VideoMetadataInput>(request))); }
   catch (error) { return handleRouteError(error); }
 }
 
 export async function DELETE(_request: Request, context: Context) {
   try {
-    const account = await requireCurrentUser();
+    const account = (await requireAreaUser("analysis")).user;
     const { matchId } = await context.params;
     const videos = await prisma.video.findMany({ where: { matchId, match: { ownerId: account.id } } });
     const shared = videos.some((video) => video.mediaAssetId) ? await ensureMediaWorkspace(account) : null;

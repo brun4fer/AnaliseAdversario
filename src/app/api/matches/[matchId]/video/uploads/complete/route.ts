@@ -1,5 +1,5 @@
 import { handleRouteError } from "@/lib/api-response";
-import { requireCurrentUser } from "@/lib/auth";
+import { requireAreaUser } from "@/lib/auth";
 import { mediaPrisma } from "@/lib/media-prisma";
 import { completeMediaMultipartUpload, headMediaObject } from "@/lib/media-r2";
 import { ensureMediaWorkspace } from "@/lib/media-workspace";
@@ -14,7 +14,7 @@ function partSizeFor(fileSize: number) {
 }
 export async function POST(request: Request, context: { params: Promise<{ matchId: string }> }) {
   try {
-    const account = await requireCurrentUser();
+    const account = (await requireAreaUser("analysis")).user;
     const { mediaWorkspace } = await ensureMediaWorkspace(account);
     const { matchId } = await context.params;
     const body = await request.json();
