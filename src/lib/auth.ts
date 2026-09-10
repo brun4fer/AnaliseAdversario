@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { cookies } from "next/headers";
-import { accessAreaDetails, globalAccessDefaultPassword, type AccessArea } from "@/lib/access-areas";
+import { accessAreaDetails, areaPasswordsEnabled, globalAccessDefaultPassword, type AccessArea } from "@/lib/access-areas";
 
 export const SESSION_COOKIE = "analise_session";
 const temporaryUsers = [
@@ -103,7 +103,7 @@ function areaPassword(account: CurrentAccount, area: AccessArea) {
 export function areaAccessVersion(account: CurrentAccount, area: AccessArea) { return areaPassword(account, area)[1]; }
 export function verifyAreaPassword(account: CurrentAccount, area: AccessArea, password: string) { const stored = areaPassword(account, area)[0]; return stored ? verifyPassword(password, stored) : password === accessAreaDetails[area].defaultPassword; }
 export function verifyGlobalAccessPassword(account: CurrentAccount, password: string) { const stored = account.user.globalAccessPasswordHash; return stored ? verifyPassword(password, stored) : password === globalAccessDefaultPassword; }
-export function hasAreaAccess(account: CurrentAccount, area: AccessArea) { return account.session.access?.globalVersion === account.user.globalAccessPasswordVersion || account.session.access?.areaVersions?.[area] === areaAccessVersion(account, area); }
+export function hasAreaAccess(account: CurrentAccount, area: AccessArea) { return !areaPasswordsEnabled || account.session.access?.globalVersion === account.user.globalAccessPasswordVersion || account.session.access?.areaVersions?.[area] === areaAccessVersion(account, area); }
 export async function requireAreaUser(area: AccessArea | AccessArea[]) { const account = await requireCurrentAccount(); const areas = Array.isArray(area) ? area : [area]; if (!areas.some((item) => hasAreaAccess(account, item))) throw new AreaAccessError(); return account; }
 export async function requireGlobalAccessUser() { const account = await requireCurrentAccount(); if (account.session.access?.globalVersion !== account.user.globalAccessPasswordVersion) throw new AreaAccessError("Enter the global password to manage access passwords."); return account; }
 export function validateAccessPassword(password: string) { if (password.length < 4) throw new Error("The password must contain at least 4 characters."); }
