@@ -615,9 +615,13 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
   const opponentName = input.opponentName.trim();
   const roundName = input.roundName?.trim();
   const title = input.title?.trim() || `${roundName ? `Round ${roundName}` : "Match"} - ${teamName} vs ${opponentName}`;
+  const analysisPerspective = input.analysisPerspective ?? "opponent";
 
   if (!teamName || !opponentName || !roundName) {
     throw new Error("The round and both teams are required.");
+  }
+  if (analysisPerspective !== "team" && analysisPerspective !== "opponent") {
+    throw new Error("Choose the team to analyse.");
   }
   if (input.homeClubId && input.homeClubId === input.awayClubId) {
     throw new Error("The home and away teams must be different.");
@@ -651,7 +655,12 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
         homeClubId: normalizeOptionalText(input.homeClubId),
         awayClubId: normalizeOptionalText(input.awayClubId),
         competitionId: normalizeOptionalText(input.competitionId),
-        analyses: { create: { ownerId, perspective: "opponent" } },
+        analyses: {
+          create: [
+            { ownerId, perspective: "opponent" },
+            { ownerId, perspective: "team" },
+          ],
+        },
       },
     });
     return mapMatch(match);
@@ -681,13 +690,10 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     updatedAt: createdAt,
   };
   store.matches.push(match);
-  store.matchAnalyses.push({
-    id: id(),
-    matchId: match.id,
-    perspective: "opponent",
-    createdAt,
-    updatedAt: createdAt,
-  });
+  store.matchAnalyses.push(
+    { id: id(), matchId: match.id, perspective: "opponent", createdAt, updatedAt: createdAt },
+    { id: id(), matchId: match.id, perspective: "team", createdAt, updatedAt: createdAt },
+  );
   return match;
 }
 

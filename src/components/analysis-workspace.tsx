@@ -134,6 +134,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
   const [exporting, setExporting] = useState<"clip" | "group" | "all" | null>(null);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [exportQuality, setExportQuality] = useState<ExportQuality>("high");
+  const [showClipExport, setShowClipExport] = useState(false);
   const [videoFinished, setVideoFinished] = useState(false);
   const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
   const [editingSubMoment, setEditingSubMoment] = useState<SubMomentRecord | null>(null);
@@ -870,9 +871,9 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         <div className="relative min-h-48 xl:min-h-0">
         <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
           <div className="border-b border-white/10 px-3 py-3">
-            <div className="flex items-start justify-between gap-2"><div><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tagged moments</p><p className="mt-1 text-xs text-slate-400">{match.moments.length} in the video</p></div><Button size="sm" variant="secondary" className="shrink-0 px-2" disabled={match.moments.length === 0 || Boolean(exporting)} onClick={() => void exportAllMoments()} title="Export all registered moments"><Archive size={14} />{exporting === "all" ? "Exporting" : "Export all"}</Button></div>
+            <div className="flex items-start justify-between gap-2"><div><p className="text-xs uppercase tracking-[0.2em] text-slate-500">Tagged moments</p><p className="mt-1 text-xs text-slate-400">{match.moments.length} in the video</p></div><div className="flex shrink-0 gap-1"><Button size="icon" variant={showClipExport ? "primary" : "secondary"} className="h-8 w-8" disabled={!selectedMoment} onClick={() => setShowClipExport((visible) => !visible)} title={showClipExport ? "Hide clip export options" : "Show clip export options"} aria-label={showClipExport ? "Hide clip export options" : "Show clip export options"}><Download size={14} /></Button><Button size="sm" variant="secondary" className="shrink-0 px-2" disabled={match.moments.length === 0 || Boolean(exporting)} onClick={() => void exportAllMoments()} title="Export all registered moments"><Archive size={14} />{exporting === "all" ? "Exporting" : "Export all"}</Button></div></div>
             {exporting === "all" && exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
-            {selectedMoment ? (
+            {selectedMoment && showClipExport ? (
               <div className="mt-3 border-t border-white/10 pt-3">
                 <p className="truncate text-[11px] font-medium text-cyan-100" title={displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective).name}>
                   {displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective).name}
@@ -911,9 +912,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                 </div>
                 {exportStatus ? <p className="mt-2 text-[10px] leading-4 text-cyan-100">{exportStatus}</p> : null}
               </div>
-            ) : (
-              <p className="mt-2 text-[10px] leading-4 text-slate-500">Select a row to review or export.</p>
-            )}
+            ) : null}
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {match.moments.length === 0 ? (
@@ -1213,7 +1212,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
 
       {videoFinished && match.moments.length > 0 ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4"><Panel className="w-full max-w-lg border-cyan-300/30 p-6 text-center"><h2 className="text-xl font-semibold text-white">The video has ended</h2><p className="mt-2 text-sm text-slate-400">The main moments have been saved. You can now continue to submoment identification.</p><div className="mt-5 flex justify-center gap-2"><Button onClick={() => setVideoFinished(false)}>Stay here</Button><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button variant="primary">Edit submoments</Button></Link></div></Panel></div> : null}
 
-      {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypes} currentTime={player.currentTime} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
+      {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypes} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
       {editingSubMoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubMoment} submomentTypes={selectedSubMomentTypes.some((type) => type.id === editingSubMoment.subMomentTypeId) ? selectedSubMomentTypes : [editingSubMoment.subMomentType, ...selectedSubMomentTypes]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={player.currentTime} onSave={updateSubMoment} onClose={() => setEditingSubMoment(null)} /> : null}
 
       {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}

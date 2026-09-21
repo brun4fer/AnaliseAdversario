@@ -3,14 +3,13 @@
 import { useState } from "react";
 import { Play, X } from "lucide-react";
 
-import { Button, FieldLabel, Panel, Select, TextArea, TextInput } from "@/components/ui";
+import { Button, FieldLabel, Panel, Select, TextArea } from "@/components/ui";
 import type { MomentRecord, MomentTypeRecord, UpdateMomentInput } from "@/lib/domain";
 import { formatPreciseTime, roundSeconds } from "@/lib/time";
 
 export function MomentEditDialog({
   moment,
   momentTypes,
-  currentTime,
   duration = 0,
   onPreview,
   onSave,
@@ -18,7 +17,6 @@ export function MomentEditDialog({
 }: {
   moment: MomentRecord;
   momentTypes: MomentTypeRecord[];
-  currentTime?: number;
   duration?: number;
   onPreview?: (start: number, end: number) => void;
   onSave: (momentId: string, input: UpdateMomentInput) => Promise<void>;
@@ -67,8 +65,7 @@ export function MomentEditDialog({
           <label className="grid gap-2"><FieldLabel>Type</FieldLabel><Select value={momentTypeId} onChange={(event) => setMomentTypeId(event.target.value)}>{momentTypes.map((type) => <option key={type.id} value={type.id}>{type.code} - {type.name}</option>)}</Select></label>
           {(["start", "end"] as const).map((target) => {
             const value = target === "start" ? start : end;
-            const setValue = target === "start" ? setStart : setEnd;
-            return <div key={target} className="grid gap-2"><div className="flex items-center justify-between"><FieldLabel>{target === "start" ? "Start" : "End"}</FieldLabel><span className="font-mono text-xs text-slate-400">{formatPreciseTime(value)}</span></div><TextInput type="number" min="0" max={duration || undefined} step="0.1" value={value} onChange={(event) => setValue(Number(event.target.value))} /><div className="flex flex-wrap gap-1">{[-1, -0.1, 0.1, 1].map((amount) => <Button key={amount} type="button" size="sm" variant="secondary" onClick={() => change(target, amount)}>{amount > 0 ? "+" : ""}{amount}s</Button>)}{currentTime !== undefined ? <Button type="button" size="sm" variant="secondary" onClick={() => setValue(limit(currentTime))}>Use current</Button> : null}</div></div>;
+            return <div key={target} className="grid gap-2 rounded-md border border-white/10 bg-black/20 p-3"><FieldLabel>{target === "start" ? "Start" : "End"}</FieldLabel><div className="rounded-md border border-cyan-300/20 bg-cyan-300/[.06] px-3 py-2 text-center font-mono text-lg text-white" aria-live="polite">{formatPreciseTime(value)}</div><div className="grid grid-cols-2 gap-2">{[-1, 1].map((amount) => <Button key={amount} type="button" size="sm" variant="secondary" onClick={() => change(target, amount)}>{amount > 0 ? "+" : ""}{amount}s</Button>)}</div></div>;
           })}
           <label className="grid gap-2"><FieldLabel>Notes</FieldLabel><TextArea value={notes} onChange={(event) => setNotes(event.target.value)} /></label>
           <div className="rounded-md border border-white/10 bg-black/20 p-3 text-sm text-slate-300">Duration: <span className="font-mono text-white">{formatPreciseTime(Math.max(0, end - start))}</span></div>

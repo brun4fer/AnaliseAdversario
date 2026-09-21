@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ArrowLeft, Save } from "lucide-react";
 
-import type { CreateMatchInput, MaintenanceRecord, MatchDetail, MatchRecord } from "@/lib/domain";
+import type { CreateMatchInput, MaintenanceRecord, MatchAnalysisPerspective, MatchDetail, MatchRecord } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { Button, FieldLabel, Panel, Select, TextArea, TextInput } from "@/components/ui";
 
@@ -38,6 +38,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
   const [seasons, setSeasons] = useState<MaintenanceRecord[]>([]);
   const [clubs, setClubs] = useState<MaintenanceRecord[]>([]);
   const [competitions, setCompetitions] = useState<MaintenanceRecord[]>([]);
+  const [analysisPerspective, setAnalysisPerspective] = useState<MatchAnalysisPerspective | "">("");
 
   useEffect(() => { Promise.all([apiFetch<MaintenanceRecord[]>("/api/maintenance/seasons"),apiFetch<MaintenanceRecord[]>("/api/maintenance/clubs"),apiFetch<MaintenanceRecord[]>("/api/maintenance/competitions")]).then(([s,c,co])=>{setSeasons(s);setClubs(c);setCompetitions(co)}).catch((err:Error)=>setError(err.message)); }, []);
 
@@ -73,13 +74,22 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
     setError(null);
 
     try {
-      const payload = { ...form, title: `Round ${form.roundName} - ${form.teamName} vs ${form.opponentName}` };
+      if (mode === "create" && !analysisPerspective) {
+        setError("Choose the team you want to analyse first.");
+        setSaving(false);
+        return;
+      }
+      const payload = {
+        ...form,
+        title: `Round ${form.roundName} - ${form.teamName} vs ${form.opponentName}`,
+        ...(mode === "create" ? { analysisPerspective } : {}),
+      };
       const saved =
         mode === "create"
           ? await apiFetch<MatchRecord>("/api/matches", { method: "POST", body: JSON.stringify(payload) })
           : await apiFetch<MatchRecord>(`/api/matches/${matchId}`, { method: "PATCH", body: JSON.stringify(payload) });
 
-      router.push(`/analysis/${saved.id}`);
+      router.push(`/analysis/${saved.id}${mode === "create" ? `?perspective=${analysisPerspective}` : ""}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error saving match.");
     } finally {
@@ -113,13 +123,24 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
 
             <div className="grid gap-4 md:grid-cols-2">
               <Field name="roundName" label="Round" value={form.roundName ?? ""} onChange={setForm} type="number" required />
-              <Choice label="Season" value={form.seasonId ?? ""} items={seasons} required onChange={id=>setForm(f=>({...f,seasonId:id,competitionId:"",competition:"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))} />
-              <Choice label="Competition" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}))}} />
-              <Choice label="Home team" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}))}} />
-              <Choice label="Away team" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}))}} />
+              <Choice label="Season" value={form.seasonId ?? ""} items={seasons} required onChange={id=>{setForm(f=>({...f,seasonId:id,competitionId:"",competition:"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}));setAnalysisPerspective("")}} />
+              <Choice label="Competition" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}));setAnalysisPerspective("")}} />
+              <Choice label="Home team" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}));setAnalysisPerspective("")}} />
+              <Choice label="Away team" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}));setAnalysisPerspective("")}} />
               <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" required />
               <Field name="venue" label="Venue" value={form.venue ?? ""} onChange={setForm} />
             </div>
+
+            {mode === "create" && form.teamName && form.opponentName ? (
+              <div className="rounded-lg border border-cyan-300/20 bg-cyan-300/[.04] p-4">
+                <FieldLabel>Which team do you want to analyse first?</FieldLabel>
+                <p className="mt-1 text-xs text-slate-500">The other team is created automatically as a second perspective. Both share the same video and moments.</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <button type="button" onClick={() => setAnalysisPerspective("team")} className={`rounded-md border p-3 text-left transition ${analysisPerspective === "team" ? "border-cyan-300 bg-cyan-300/10 text-cyan-50" : "border-white/10 bg-white/[.035] text-slate-300 hover:bg-white/[.07]"}`}><span className="block text-[10px] uppercase tracking-[.16em] text-slate-500">Home team</span><span className="mt-1 block font-semibold">Analyse {form.teamName}</span></button>
+                  <button type="button" onClick={() => setAnalysisPerspective("opponent")} className={`rounded-md border p-3 text-left transition ${analysisPerspective === "opponent" ? "border-cyan-300 bg-cyan-300/10 text-cyan-50" : "border-white/10 bg-white/[.035] text-slate-300 hover:bg-white/[.07]"}`}><span className="block text-[10px] uppercase tracking-[.16em] text-slate-500">Away team</span><span className="mt-1 block font-semibold">Analyse {form.opponentName}</span></button>
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid gap-2">
               <FieldLabel htmlFor="notes">Notes</FieldLabel>
@@ -137,7 +158,7 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
                   Cancel
                 </Button>
               </Link>
-              <Button type="submit" variant="primary" disabled={saving}>
+              <Button type="submit" variant="primary" disabled={saving || (mode === "create" && !analysisPerspective)}>
                 <Save size={16} />
                 {saving ? "Saving" : "Save and open analysis"}
               </Button>

@@ -53,6 +53,8 @@ export function ReportsClient() {
   const [editingClip, setEditingClip] = useState<ReportClip | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [videoDuration, setVideoDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
 
   const analyses = useMemo<ReportAnalysis[]>(
     () => matches.flatMap((match) => match.analyses.map((analysis) => ({ match, analysis }))),
@@ -104,7 +106,19 @@ export function ReportsClient() {
     });
   }, [details, momentTypeId, selectedAnalyses, settings, subMomentTypeId]);
 
+  const clipIds = useMemo(() => clips.map(reportClipKey), [clips]);
+  const selectedExportClips = useMemo(
+    () => clips.filter((clip) => selectedClipIds.includes(reportClipKey(clip))),
+    [clips, selectedClipIds],
+  );
+
+  useEffect(() => {
+    const visibleIds = new Set(clipIds);
+    setSelectedClipIds((current) => current.filter((id) => visibleIds.has(id)));
+  }, [clipIds]);
+
   function toggleMatch(id: string) { setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
+  function toggleClip(id: string) { setSelectedClipIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]); }
   function changeMomentFilter(id: string) { setMomentTypeId(id); setSubMomentTypeId(""); stopPlayback(); }
 
   function stopPlayback() {
@@ -178,7 +192,7 @@ export function ReportsClient() {
 
   function handleLoadedMetadata() {
     if (!playing) return; const video = videoRef.current; if (!video) return;
-    const start = clips[playing.index]?.moment.startTimeSeconds || 0; setVideoDuration(video.duration); setCurrentTime(start); video.currentTime = start; advancingRef.current = false;
+    const start = clips[playing.index]?.moment.startTimeSeconds || 0; setVideoDuration(video.duration); setCurrentTime(start); video.currentTime = start; video.playbackRate = playbackRate; advancingRef.current = false;
     if (playing.autoplay) void video.play();
   }
 
@@ -194,6 +208,7 @@ export function ReportsClient() {
   async function getReportVideo(matchId: string) { return sessionFilesRef.current.get(matchId) || await getRememberedMatchVideo(matchId).catch(() => null); }
 
   function seekTo(seconds: number) { const video = videoRef.current; const clip = playing ? clips[playing.index] : null; if (!video || !clip) return; const end = Math.min(video.duration || clip.moment.endTimeSeconds, clip.moment.endTimeSeconds); const next = Math.max(clip.moment.startTimeSeconds, Math.min(end, seconds)); video.currentTime = next; setCurrentTime(next); }
+  function changePlaybackRate(rate: number) { setPlaybackRate(rate); if (videoRef.current) videoRef.current.playbackRate = rate; }
   useVideoKeyboardSeek(videoRef, seekTo, Boolean(playing));
 
   async function downloadFullMatch(match: MatchDetail) {
@@ -213,7 +228,8 @@ export function ReportsClient() {
   }
 
   async function requestOperation(operation: PendingOperation) {
-    if (clips.length === 0) return;
+    const operationClips = operation === "export" ? selectedExportClips : clips;
+    if (operationClips.length === 0) return;
     if (operation === "play") {
       startPlayback();
       return;
@@ -232,7 +248,7 @@ export function ReportsClient() {
     }
     setCheckingVideos(true); setVideoPreparationError(null);
     try {
-      const requiredMatches = [...new Map(clips.map((clip) => [clip.match.id, clip.match])).values()];
+      const requiredMatches = [...new Map(operationClips.map((clip) => [clip.match.id, clip.match])).values()];
       const availability = await Promise.all(requiredMatches.map(async (match) => ({
         match,
         available: match.video?.storageStatus === "READY" || Boolean(await getReportVideo(match.id)),
@@ -290,15 +306,16 @@ export function ReportsClient() {
   }
 
   async function exportReport(directory: ExportDirectory | null) {
-    if (clips.length === 0) return;
+    const exportClips = selectedExportClips;
+    if (exportClips.length === 0) return;
     setExporting(true); setExportStatus("Starting export..."); stopPlayback(); setNotice(null);
     const zip = directory ? null : new JSZip();
     const missing = new Set<string>();
-    const reportRoot = `Report-${selectedIds.length}-analyses-${clips.length}-clips`;
+    const reportRoot = `Report-${selectedIds.length}-analyses-${exportClips.length}-clips`;
     const indexRows: string[][] = [["match", "analysed_team", "moment", "start_seconds", "end_seconds", "submoments", "files"]];
     try {
       const byMatch = new Map<string, ReportClip[]>();
-      for (const clip of clips) byMatch.set(clip.match.id, [...(byMatch.get(clip.match.id) || []), clip]);
+      for (const clip of exportClips) byMatch.set(clip.match.id, [...(byMatch.get(clip.match.id) || []), clip]);
       let completed = 0;
       for (const matchClips of byMatch.values()) {
         const match = matchClips[0].match;
@@ -307,13 +324,13 @@ export function ReportsClient() {
         const session = new SmartVideoExportSession(exportVideo.source);
         try {
           for (let index = 0; index < matchClips.length; index += 1) {
-            const clip = matchClips[index]; completed += 1; setExportStatus(`Exporting ${completed} of ${clips.length}: ${clip.match.title}`);
+            const clip = matchClips[index]; completed += 1; setExportStatus(`Exporting ${completed} of ${exportClips.length}: ${clip.match.title}`);
             const exported = await session.exportMoment({
               sourceUrlFallback: exportVideo.url,
               match: { ...clip.match, title: `${clip.match.title} - ${clip.analysis.analysedTeamName}`, opponentName: clip.analysis.analysedTeamName },
               moment: clip.moment,
               quality: exportQuality,
-              onStatus: (status) => setExportStatus(`${completed} of ${clips.length}: ${status}`),
+              onStatus: (status) => setExportStatus(`${completed} of ${exportClips.length}: ${status}`),
             });
             const submomentFolders = subMomentTypeId
               ? [settings?.subMomentTypes.find((type) => type.id === subMomentTypeId)?.name || "Submoment"]
@@ -369,13 +386,26 @@ export function ReportsClient() {
       <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="flex gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
       <div className="space-y-4">
         <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedIds.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={clips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : "Export clips"}</Button></div></Panel>
+        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedIds.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
         {details.length ? <Panel className="flex flex-wrap items-center gap-2 p-3"><FieldLabel>Full match videos</FieldLabel>{details.map((match) => <Button key={match.id} size="sm" disabled={!match.video} onClick={() => void downloadFullMatch(match)}><Download size={14}/><span className="max-w-40 truncate">{match.title}</span></Button>)}</Panel> : null}
-        {playing && clips[playing.index] ? <div ref={workspaceRef} data-video-workspace className="relative grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
-          <div className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-white/10 bg-pitch-950/95 p-2 shadow-xl lg:right-[19.5rem]"><input aria-label="Clip position" type="range" min={clips[playing.index].moment.startTimeSeconds} max={Math.min(videoDuration || clips[playing.index].moment.endTimeSeconds, clips[playing.index].moment.endTimeSeconds)} step={.1} value={Math.max(clips[playing.index].moment.startTimeSeconds, Math.min(currentTime, clips[playing.index].moment.endTimeSeconds))} onChange={(event) => seekTo(Number(event.target.value))} className="h-1.5 w-full cursor-pointer accent-cyan-300"/><div className="mt-1 flex items-center justify-end gap-1"><span className="mr-auto font-mono text-xs text-slate-300">{formatPreciseTime(currentTime)}</span><Button size="icon" className="h-7 w-7" title="Back 5 seconds (left arrow)" onClick={() => seekTo(currentTime - 5)}><RotateCcw size={13}/></Button><Button size="icon" className="h-7 w-7" title="Forward 5 seconds (right arrow)" onClick={() => seekTo(currentTime + 5)}><ChevronsRight size={13}/></Button><VideoFullscreenButton targetRef={workspaceRef}/></div></div>
-          <Panel className="self-start overflow-hidden"><div className="aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div><div className="flex items-center justify-between gap-3 border-t border-white/10 p-3"><div className="min-w-0"><p className="truncate text-sm text-white">{clips[playing.index].match.title} · Analysing: {clips[playing.index].analysis.analysedTeamName}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div><Button size="icon" variant="primary" onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause /> : <Play />}</Button></div></Panel>
-          <div className="relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={`${clip.analysis.id}-${clip.moment.id}`} clip={clip} active={playing?.index === index} compact onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
-        </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one saved analysis to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={`${clip.analysis.id}-${clip.moment.id}`} clip={clip} active={false} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
+        {playing && clips[playing.index] ? <div ref={workspaceRef} data-video-workspace data-report-workspace className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
+          <Panel className="report-video-panel self-start overflow-hidden">
+            <div className="report-video-frame aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full object-contain" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div>
+            <div className="border-t border-white/10 p-2">
+              <input aria-label="Clip position" type="range" min={clips[playing.index].moment.startTimeSeconds} max={Math.min(videoDuration || clips[playing.index].moment.endTimeSeconds, clips[playing.index].moment.endTimeSeconds)} step={.1} value={Math.max(clips[playing.index].moment.startTimeSeconds, Math.min(currentTime, clips[playing.index].moment.endTimeSeconds))} onChange={(event) => seekTo(Number(event.target.value))} className="h-1.5 w-full cursor-pointer accent-cyan-300"/>
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <Button size="icon" className="h-8 w-8" title="Back 5 seconds (left arrow)" onClick={() => seekTo(currentTime - 5)}><RotateCcw size={13}/></Button>
+                <Button size="icon" className="h-8 w-8" variant="primary" aria-label={isPlaying ? "Pause" : "Play"} onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause size={15}/> : <Play size={15}/>}</Button>
+                <Button size="icon" className="h-8 w-8" title="Forward 5 seconds (right arrow)" onClick={() => seekTo(currentTime + 5)}><ChevronsRight size={13}/></Button>
+                <div className="ml-1 flex overflow-hidden rounded-md border border-white/10">{[1, 2, 4].map((rate) => <button key={rate} type="button" className={`h-8 px-2 text-[10px] transition ${playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[.04] text-slate-300 hover:bg-white/[.1]"}`} onClick={() => changePlaybackRate(rate)}>{rate}×</button>)}</div>
+                <span className="ml-auto font-mono text-xs text-slate-300">{formatPreciseTime(currentTime)}</span>
+                <VideoFullscreenButton targetRef={workspaceRef}/>
+              </div>
+              <div className="mt-2 min-w-0 border-t border-white/[.06] pt-2"><p className="truncate text-sm text-white">{clips[playing.index].match.title} · Analysing: {clips[playing.index].analysis.analysedTeamName}</p><p className="text-xs text-slate-500">Clip {playing.index + 1} of {clips.length} · {clips[playing.index].moment.momentType.name}</p></div>
+            </div>
+          </Panel>
+          <div className="report-clip-list relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={reportClipKey(clip)} clip={clip} active={playing?.index === index} selected={selectedClipIds.includes(reportClipKey(clip))} compact onSelect={() => toggleClip(reportClipKey(clip))} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
+        </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one saved analysis to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={reportClipKey(clip)} clip={clip} active={false} selected={selectedClipIds.includes(reportClipKey(clip))} onSelect={() => toggleClip(reportClipKey(clip))} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
       </div>
     </div>
     {pendingOperation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"><Panel className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-cyan-300/30 bg-pitch-950 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-white/10 p-5"><div><p className="text-xs uppercase tracking-[.2em] text-cyan-200/80">Prepare {pendingOperation === "play" ? "playback" : "export"}</p><h2 className="mt-2 text-xl font-semibold text-white">Add missing videos</h2><p className="mt-2 text-sm text-slate-400">The action starts automatically as soon as all videos are available.</p></div><Button size="icon" variant="ghost" aria-label="Close" onClick={() => { pendingExportDirectoryRef.current = null; setPendingOperation(null); setMissingVideos([]); }}><X size={17} /></Button></div><div className="p-5"><label className="mb-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-cyan-300/35 bg-cyan-300/[.06] p-4 text-sm font-medium text-cyan-100 hover:bg-cyan-300/10"><CheckSquare size={17} />Select multiple videos<input type="file" accept="video/*" multiple className="hidden" onChange={(event) => void addSeveralVideos(event.target.files)} /></label>{videoPreparationError && <div className="mb-4 rounded-md border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">{videoPreparationError}</div>}<div className="space-y-2">{missingVideos.map((match) => <div key={match.id} className="flex flex-col gap-3 rounded-md border border-white/10 bg-white/[.035] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-medium text-white">{match.title}</p><p className="mt-1 truncate text-xs text-slate-500">Expected: {match.video?.fileName || "video for this match"}</p></div><label className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[.06] px-3 text-sm text-slate-100 hover:bg-white/[.1]"><FileVideo size={15} />Select video<input type="file" accept="video/*" className="hidden" onChange={(event) => void addVideo(match, event.target.files?.[0])} /></label></div>)}</div></div></Panel></div>}
@@ -386,7 +416,9 @@ export function ReportsClient() {
 function ReportClipRow({
   clip,
   active,
+  selected,
   compact = false,
+  onSelect,
   onPlay,
   onOutcome,
   onEdit,
@@ -394,7 +426,9 @@ function ReportClipRow({
 }: {
   clip: ReportClip;
   active: boolean;
+  selected: boolean;
   compact?: boolean;
+  onSelect: () => void;
   onPlay: () => void;
   onOutcome: (outcome: "positive" | "negative") => void;
   onEdit: () => void;
@@ -402,14 +436,17 @@ function ReportClipRow({
 }) {
   return (
     <div className={active ? "bg-cyan-300/10" : "hover:bg-white/[.035]"}>
-      <button type="button" onClick={onPlay} className="flex w-full items-center gap-3 px-3 pb-2 pt-3 text-left">
-        <Play size={15} className="shrink-0 text-cyan-200" />
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-white">{clip.match.title} · Analysing: {clip.analysis.analysedTeamName}</span>
-          <span className="block truncate text-xs text-slate-500">{clip.moment.momentType.name} · {formatPreciseTime(clip.moment.startTimeSeconds)} – {formatPreciseTime(clip.moment.endTimeSeconds)}</span>
-        </span>
-        <Badge className="shrink-0">{clip.moment.subMoments.length}{compact ? "" : " sub."}</Badge>
-      </button>
+      <div className="flex items-start gap-2 px-3 pb-2 pt-3">
+        <input type="checkbox" checked={selected} onChange={onSelect} className="mt-1 h-4 w-4 shrink-0 cursor-pointer accent-cyan-300" aria-label={selected ? "Remove clip from export" : "Select clip for export"}/>
+        <button type="button" onClick={onPlay} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+          <Play size={15} className="shrink-0 text-cyan-200" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm text-white">{clip.match.title} · Analysing: {clip.analysis.analysedTeamName}</span>
+            <span className="block truncate text-xs text-slate-500">{clip.moment.momentType.name} · {formatPreciseTime(clip.moment.startTimeSeconds)} – {formatPreciseTime(clip.moment.endTimeSeconds)}</span>
+          </span>
+          <Badge className="shrink-0">{clip.moment.subMoments.length}{compact ? "" : " sub."}</Badge>
+        </button>
+      </div>
       <div className="flex flex-wrap items-center justify-end gap-1 px-3 pb-3">
         <OutcomeButtons value={clip.moment.outcome} onChange={onOutcome} />
         <Button size="sm" variant="secondary" className="h-7" onClick={onEdit}><Pencil size={12} />Edit</Button>
@@ -418,6 +455,8 @@ function ReportClipRow({
     </div>
   );
 }
+
+function reportClipKey(clip: ReportClip) { return `${clip.analysis.id}:${clip.moment.id}`; }
 
 function safeName(value: string) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-").replace(/\s+/g, " ").trim() || "Unnamed"; }
 

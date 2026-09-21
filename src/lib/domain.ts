@@ -140,6 +140,7 @@ export type CreateMatchInput = {
   firstHalfEndSeconds?: number | null;
   secondHalfStartSeconds?: number | null;
   secondHalfEndSeconds?: number | null;
+  analysisPerspective?: MatchAnalysisPerspective;
 };
 
 export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
