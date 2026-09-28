@@ -16,6 +16,10 @@ export function getSubMomentParentCode(subMomentType: SubMomentTypeRecord) {
   return parentCode || null;
 }
 
+export function getSubMomentGroupCode(momentType: MomentTypeRecord) {
+  return sharedSubMomentParentCodes[momentType.code] ?? momentType.code;
+}
+
 export function getSubMomentTypesForMoment(
   subMomentTypes: SubMomentTypeRecord[],
   momentType: MomentTypeRecord | null,
@@ -24,7 +28,7 @@ export function getSubMomentTypesForMoment(
     return [];
   }
 
-  const parentCode = sharedSubMomentParentCodes[momentType.code] ?? momentType.code;
+  const parentCode = getSubMomentGroupCode(momentType);
   const typedSubMoments = subMomentTypes.filter(
     (subMomentType) => getSubMomentParentCode(subMomentType) === parentCode,
   );

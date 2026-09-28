@@ -1322,14 +1322,23 @@ export async function createSubMomentType(
   input: Pick<SubMomentTypeRecord, "name" | "code">,
 ) {
   const timestamp = now();
+  const name = input.name.trim();
   const code = input.code.trim().toUpperCase();
+
+  if (!name || !code) {
+    throw new Error("The submoment name and code are required.");
+  }
 
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
+    const duplicate = await prisma.subMomentType.findFirst({ where: { ownerId, code }, select: { id: true } });
+    if (duplicate) {
+      throw new Error("A submoment with this code already exists.");
+    }
     const type = await prisma.subMomentType.create({
       data: {
         ownerId,
-        name: input.name.trim(),
+        name,
         code,
         requiresFieldLocation: false,
         requiresGoalLocation: false,
@@ -1339,9 +1348,12 @@ export async function createSubMomentType(
   }
 
   const store = getMemoryStore();
+  if (store.subMomentTypes.some((type) => type.code.toUpperCase() === code)) {
+    throw new Error("A submoment with this code already exists.");
+  }
   const type: SubMomentTypeRecord = {
     id: id(),
-    name: input.name.trim(),
+    name,
     code,
     requiresFieldLocation: false,
     requiresGoalLocation: false,
@@ -1356,13 +1368,27 @@ export async function updateSubMomentType(
   subMomentTypeId: string,
   input: Partial<Pick<SubMomentTypeRecord, "name" | "code">>,
 ) {
+  const name = input.name?.trim();
+  const code = input.code?.trim().toUpperCase();
+  if (input.name !== undefined && !name) {
+    throw new Error("The submoment name is required.");
+  }
+  if (input.code !== undefined && !code) {
+    throw new Error("The submoment code is required.");
+  }
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
+    if (code) {
+      const duplicate = await prisma.subMomentType.findFirst({ where: { ownerId, code, id: { not: subMomentTypeId } }, select: { id: true } });
+      if (duplicate) {
+        throw new Error("A submoment with this code already exists.");
+      }
+    }
     const type = await prisma.subMomentType.update({
       where: { id: subMomentTypeId, ownerId },
       data: {
-        ...(input.name !== undefined ? { name: input.name.trim() } : {}),
-        ...(input.code !== undefined ? { code: input.code.trim().toUpperCase() } : {}),
+        ...(name !== undefined ? { name } : {}),
+        ...(code !== undefined ? { code } : {}),
       },
     });
     return mapSubMomentType(type);
@@ -1373,11 +1399,14 @@ export async function updateSubMomentType(
   if (!type) {
     throw new Error("Submoment type not found.");
   }
-  if (input.name !== undefined) {
-    type.name = input.name.trim();
+  if (code && store.subMomentTypes.some((item) => item.id !== subMomentTypeId && item.code.toUpperCase() === code)) {
+    throw new Error("A submoment with this code already exists.");
   }
-  if (input.code !== undefined) {
-    type.code = input.code.trim().toUpperCase();
+  if (name !== undefined) {
+    type.name = name;
+  }
+  if (code !== undefined) {
+    type.code = code;
   }
   type.updatedAt = now();
   return type;

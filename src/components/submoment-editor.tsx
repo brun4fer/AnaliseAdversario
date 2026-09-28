@@ -13,7 +13,7 @@ import type { MatchDetail, MomentRecord, SettingsPayload, SubMomentRecord, SubMo
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
 import { attachCloudVideo, getCloudVideoLibrary, getRemoteVideoUrl, uploadMatchVideo, type CloudVideoAsset } from "@/lib/remote-video-store";
-import { getSubMomentTypesForMoment } from "@/lib/taxonomy";
+import { getSubMomentGroupCode, getSubMomentTypesForMoment } from "@/lib/taxonomy";
 import { formatBytes, formatPreciseTime, formatTime } from "@/lib/time";
 
 export function SubmomentEditor({ matchId, perspective }: { matchId: string; perspective: AnalysisPerspective }) {
@@ -91,6 +91,10 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     settings?.subMomentTypes || [],
     selectedMoment ? displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective) : null,
   ), [canonicalMomentTypes, perspective, selectedMoment, settings?.subMomentTypes]);
+  const selectedDisplayMomentType = selectedMoment
+    ? displayMomentType(selectedMoment.momentType, canonicalMomentTypes, perspective)
+    : null;
+  const newSubMomentPrefix = selectedDisplayMomentType ? getSubMomentGroupCode(selectedDisplayMomentType) : "SUB";
 
   function selectMoment(moment: MomentRecord, play = false) {
     setSelectedId(moment.id); setPendingType(null);
@@ -233,8 +237,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
   }
 
   function openNewType() {
-    const prefix = availableSubmoments[0]?.code.split("_")[0] || selectedMoment?.momentType.code || "SUB";
-    setManagingType("new"); setTypeName(""); setTypeCode(`${prefix}_`);
+    setManagingType("new"); setTypeName(""); setTypeCode("");
   }
 
   function openEditType(type: SubMomentTypeRecord) {
@@ -334,7 +337,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     <input ref={inputRef} type="file" accept="video/*" className="hidden" onChange={(event) => { void loadVideo(event.target.files?.[0]); event.currentTarget.value = ""; }} />
     <Panel className="flex shrink-0 flex-wrap items-center gap-2 px-2 py-1.5"><Link href={`/analysis/${matchId}?${perspectiveQuery(perspective)}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-white/10 bg-white/[.04] px-2.5 text-[10px] font-semibold text-slate-300 transition hover:bg-white/[.08] hover:text-white"><ArrowLeft size={12} />Video analysis</Link><Badge className="max-w-36 truncate border-cyan-300/25 bg-cyan-300/10 text-cyan-100" title={`Analysing ${perspective === "team" ? match.teamName || match.opponentName : match.opponentName}`}>Analysing: {perspective === "team" ? match.teamName || match.opponentName : match.opponentName}</Badge><label className="flex min-w-56 flex-1 items-center gap-2"><span className="shrink-0 text-[9px] font-semibold uppercase tracking-[.16em] text-slate-500">Moment</span><Select className="h-8 min-w-0 flex-1 py-0 text-xs" value={filterId} onChange={(event) => changeFilter(event.target.value)}>{momentTypeChoices.map((type) => <option key={type.id} value={type.id}>{type.name} ({match.moments.filter((moment) => moment.momentTypeId === type.id).length})</option>)}</Select></label><Badge>{selectedIndex >= 0 ? `${selectedIndex + 1} / ${moments.length}` : `0 / ${moments.length}`}</Badge><Button size="sm" className="h-8 whitespace-nowrap" variant="primary" onClick={startAll} disabled={!sourceUrl || moments.length === 0}><ListVideo size={13} />Play all ({moments.length})</Button><Button size="sm" className="h-8 whitespace-nowrap" variant="secondary" disabled={uploading} onClick={openCloudLibrary}><Cloud size={13} />Cloud library</Button><Button size="sm" className="h-8 whitespace-nowrap" variant={uploading ? "danger" : "secondary"} onClick={() => uploading ? uploadAbortRef.current?.abort() : inputRef.current?.click()}>{uploading ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}{uploading ? `Cancel ${Math.round(uploadProgress * 100)}%` : match.video?.storageStatus === "READY" ? "Replace video" : "Upload video"}</Button></Panel>
     {error && <div className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-2 rounded-lg border border-amber-300/30 bg-pitch-950/95 px-3 py-2 text-xs text-amber-100 shadow-2xl"><span className="min-w-0 flex-1">{error}</span><button type="button" aria-label="Close message" onClick={() => setError(null)}><X size={13} /></button></div>}
-    {managingType ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">{managingType === "new" ? "Add submoment" : "Edit submoment type"}</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setManagingType(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={typeName} onChange={(event) => setTypeName(event.target.value)} placeholder="Submoment name" /></label><label className="grid gap-2"><FieldLabel>Code</FieldLabel><TextInput value={typeCode} onChange={(event) => setTypeCode(event.target.value.toUpperCase())} placeholder="TYPE_CODE" /></label></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setManagingType(null)}>Cancel</Button><Button variant="primary" disabled={saving || !typeName.trim() || !typeCode.trim()} onClick={() => void saveManagedType()}>{saving ? "Saving…" : "Save"}</Button></div></Panel></div> : null}
+    {managingType ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">{managingType === "new" ? "Add submoment" : "Edit submoment type"}</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setManagingType(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={typeName} onChange={(event) => { const name = event.target.value; setTypeName(name); if (managingType === "new") setTypeCode(name.trim() ? createUniqueSubMomentCode(newSubMomentPrefix, name, settings.subMomentTypes) : ""); }} placeholder="Submoment name" /></label><label className="grid gap-2"><FieldLabel>{managingType === "new" ? "Code (automatic)" : "Code"}</FieldLabel><TextInput value={typeCode} readOnly={managingType === "new"} onChange={(event) => setTypeCode(event.target.value.toUpperCase())} placeholder={`${newSubMomentPrefix}_SUBMOMENT`} className={managingType === "new" ? "cursor-default text-slate-400" : undefined} />{managingType === "new" ? <span className="text-[11px] text-slate-500">Generated automatically from the name and linked to this moment.</span> : null}</label></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setManagingType(null)}>Cancel</Button><Button variant="primary" disabled={saving || !typeName.trim() || !typeCode.trim()} onClick={() => void saveManagedType()}>{saving ? "Saving…" : "Save"}</Button></div></Panel></div> : null}
     <div ref={workspaceRef} data-video-workspace className="submoment-layout relative grid min-h-0 flex-1 items-stretch gap-2 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
       {selectedMoment && sourceUrl ? <div className="absolute bottom-2 left-2 right-2 z-20 rounded-lg border border-white/10 bg-pitch-950/95 p-2 shadow-xl xl:left-[18.5rem] xl:right-[22.5rem]"><input aria-label="Moment position" type="range" min={selectedMoment.startTimeSeconds} max={selectedMoment.endTimeSeconds} step={.1} value={Math.max(selectedMoment.startTimeSeconds, Math.min(currentTime, selectedMoment.endTimeSeconds))} onChange={(event) => seekTo(Number(event.target.value))} className="h-1.5 w-full cursor-pointer accent-cyan-300"/><div className="mt-1 flex items-center justify-end gap-1"><span className="mr-auto font-mono text-xs text-slate-300">{formatPreciseTime(currentTime)}</span><Button size="icon" className="h-7 w-7" title="Back 5 seconds (left arrow)" onClick={() => seekTo(currentTime - 5)}><RotateCcw size={13}/></Button><Button size="icon" className="h-7 w-7" title="Forward 5 seconds (right arrow)" onClick={() => seekTo(currentTime + 5)}><ChevronsRight size={13}/></Button><VideoFullscreenButton targetRef={workspaceRef}/></div></div> : null}
       <div className="relative min-h-48 xl:min-h-0">
@@ -359,10 +362,28 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     </div>
     <Panel className="shrink-0 p-2">
       <div className="flex items-center justify-between gap-3"><p className="text-sm text-slate-300">Manage submoment buttons</p><Button size="sm" variant="primary" onClick={openNewType}><Plus size={14} />Add submoment</Button></div>
-      <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{availableSubmoments.map((type) => <div key={type.id} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
+      <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(15rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
     </Panel>
     {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypeChoices} duration={videoRef.current?.duration || match.video?.durationSeconds || 0} onPreview={(start) => { if (videoRef.current) { videoRef.current.currentTime = start; void videoRef.current.play(); } }} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
     {editingSubmoment && selectedMoment ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">Edit submoment</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setEditingSubmoment(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Type</FieldLabel><Select value={editTypeId} onChange={(event) => setEditTypeId(event.target.value)}>{(editingSubmoment && !availableSubmoments.some((type) => type.id === editingSubmoment.subMomentTypeId) ? [editingSubmoment.subMomentType, ...availableSubmoments] : availableSubmoments).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><div className="flex justify-between"><FieldLabel>Time in seconds</FieldLabel><span className="font-mono text-xs text-slate-400">{editTime === "" ? "—" : formatPreciseTime(Number(editTime))}</span></div><TextInput type="number" step="0.1" min={selectedMoment.startTimeSeconds} max={selectedMoment.endTimeSeconds} value={editTime} onChange={(event) => setEditTime(event.target.value)} /></label><Button variant="secondary" onClick={() => setEditTime(String(Math.round(currentTime * 10) / 10))}>Use current video time</Button></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setEditingSubmoment(null)}>Cancel</Button><Button variant="primary" disabled={saving} onClick={() => void saveEditedSubmoment()}>{saving ? "Saving…" : "Save changes"}</Button></div></Panel></div> : null}
     {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}
   </div>;
+}
+
+function createUniqueSubMomentCode(prefix: string, name: string, existingTypes: SubMomentTypeRecord[]) {
+  const normalizedName = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toUpperCase() || "SUBMOMENT";
+  const baseCode = `${prefix}_${normalizedName}`;
+  const existingCodes = new Set(existingTypes.map((type) => type.code.toUpperCase()));
+  let code = baseCode;
+  let suffix = 2;
+  while (existingCodes.has(code)) {
+    code = `${baseCode}_${suffix}`;
+    suffix += 1;
+  }
+  return code;
 }
