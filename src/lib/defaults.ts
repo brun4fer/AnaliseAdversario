@@ -15,7 +15,7 @@ export const defaultMomentTypes: MomentTypeRecord[] = [
   { id: "mt-bpd", name: "Defensive Set Pieces", code: "DSP", color: "#a78bfa", defaultShortcut: "6", createdAt: timestamp, updatedAt: timestamp },
 ];
 
-const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [
+const defaultSubMomentTypeDefinitions: Omit<SubMomentTypeRecord, "sortOrder">[] = [
   { id: "smt-oo-pontape-saida", name: "Kickoff", code: "OO_KICKOFF", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
   { id: "smt-oo-saida-gr", name: "Goalkeeper Build-up", code: "OO_GOALKEEPER_BUILDUP", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
   { id: "smt-oo-construcao", name: "Build-up", code: "OO_BUILDUP", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
@@ -48,7 +48,13 @@ const defaultSubMomentTypeDefinitions: SubMomentTypeRecord[] = [
   { id: "smt-bp-golo", name: "Goal", code: "SP_GOAL", requiresFieldLocation: false, requiresGoalLocation: false, createdAt: timestamp, updatedAt: timestamp },
 ];
 
-export const defaultSubMomentTypes: SubMomentTypeRecord[] = defaultSubMomentTypeDefinitions;
+const subMomentGroupPositions = new Map<string, number>();
+export const defaultSubMomentTypes: SubMomentTypeRecord[] = defaultSubMomentTypeDefinitions.map((type) => {
+  const group = type.code.split("_")[0];
+  const sortOrder = subMomentGroupPositions.get(group) ?? 0;
+  subMomentGroupPositions.set(group, sortOrder + 1);
+  return { ...type, sortOrder };
+});
 
 export const defaultPlayerShortcuts: ShortcutSettingRecord[] = [
   { id: "sc-play", actionType: "player.togglePlay", targetType: "player", targetId: null, key: "Space", createdAt: timestamp, updatedAt: timestamp },

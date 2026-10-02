@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronLeft, ChevronRight, ChevronsRight, Cloud, FileVideo, ListVideo, Loader2, Pause, Pencil, Play, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsRight, Cloud, FileVideo, ListVideo, Loader2, Pause, Pencil, Play, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
@@ -259,6 +259,26 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     } catch (err) { setError(err instanceof Error ? err.message : "Could not delete the submoment type."); }
   }
 
+  async function moveType(type: SubMomentTypeRecord, direction: -1 | 1) {
+    if (!settings) return;
+    const currentIndex = availableSubmoments.findIndex((item) => item.id === type.id);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= availableSubmoments.length) return;
+    const reordered = [...availableSubmoments];
+    const [moved] = reordered.splice(currentIndex, 1);
+    reordered.splice(nextIndex, 0, moved);
+    setSaving(true); setError(null);
+    try {
+      const savedTypes = await Promise.all(reordered.map((item, sortOrder) => apiFetch<SubMomentTypeRecord>(`/api/settings/submoment-types/${item.id}`, { method: "PATCH", body: JSON.stringify({ sortOrder }) })));
+      const savedById = new Map(savedTypes.map((item) => [item.id, item]));
+      setSettings({ ...settings, subMomentTypes: settings.subMomentTypes.map((item) => savedById.get(item.id) ?? item) });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change the submoment position.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function loadVideo(file?: File) {
     if (!file) return;
     if (sourceUrl) URL.revokeObjectURL(sourceUrl);
@@ -354,7 +374,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     </div>
     <Panel className="shrink-0 p-2">
       <div className="flex items-center justify-between gap-3"><p className="text-sm text-slate-300">Manage submoment buttons</p><Button size="sm" variant="primary" onClick={openNewType}><Plus size={14} />Add submoment</Button></div>
-      <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(15rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
+      <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(19rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type, index) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" disabled={saving || index === 0} title="Move submoment up" aria-label={`Move ${type.name} up`} onClick={() => void moveType(type, -1)}><ChevronUp size={13} /></Button><Button size="icon" variant="secondary" disabled={saving || index === availableSubmoments.length - 1} title="Move submoment down" aria-label={`Move ${type.name} down`} onClick={() => void moveType(type, 1)}><ChevronDown size={13} /></Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
     </Panel>
     {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypeChoices} duration={videoRef.current?.duration || match.video?.durationSeconds || 0} onPreview={(start) => { if (videoRef.current) { videoRef.current.currentTime = start; void videoRef.current.play(); } }} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
     {editingSubmoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubmoment} submomentTypes={availableSubmoments.some((type) => type.id === editingSubmoment.subMomentTypeId) ? availableSubmoments : [editingSubmoment.subMomentType, ...availableSubmoments]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={currentTime} onSave={saveEditedSubmoment} onClose={() => setEditingSubmoment(null)} /> : null}

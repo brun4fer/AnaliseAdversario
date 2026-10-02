@@ -90,11 +90,18 @@ const legacySubMomentTypeCodeMappings = [
   { from: "BP_GOLO", to: "SP_GOAL" },
 ] as const;
 
-const subMomentTypes = subMomentTypeDefinitions.map((type) => ({
-  ...type,
-  requiresFieldLocation: true,
-  requiresGoalLocation: requiresGoalLocation(type.code),
-}));
+const subMomentGroupPositions = new Map<string, number>();
+const subMomentTypes = subMomentTypeDefinitions.map((type) => {
+  const group = type.code.split("_")[0];
+  const sortOrder = subMomentGroupPositions.get(group) ?? 0;
+  subMomentGroupPositions.set(group, sortOrder + 1);
+  return {
+    ...type,
+    sortOrder,
+    requiresFieldLocation: true,
+    requiresGoalLocation: requiresGoalLocation(type.code),
+  };
+});
 
 const playerShortcuts = [
   { actionType: "player.togglePlay", targetType: "player", targetId: null, key: "Space" },
@@ -195,7 +202,11 @@ async function main() {
   for (const type of subMomentTypes) {
     await prisma.subMomentType.upsert({
       where: { ownerId_code: { ownerId: paulo.id, code: type.code } },
-      update: type,
+      update: {
+        name: type.name,
+        requiresFieldLocation: type.requiresFieldLocation,
+        requiresGoalLocation: type.requiresGoalLocation,
+      },
       create: { ...type, ownerId: paulo.id },
     });
   }

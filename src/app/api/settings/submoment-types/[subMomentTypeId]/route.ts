@@ -11,7 +11,7 @@ export async function PATCH(request: Request, context: Context) {
   try {
     await requireAreaUser(["settings", "analysis"]);
     const { subMomentTypeId } = await context.params;
-    const body = await readJson<Partial<Pick<SubMomentTypeRecord, "name" | "code">>>(request);
+    const body = await readJson<Partial<Pick<SubMomentTypeRecord, "name" | "code" | "sortOrder">>>(request);
     return ok(await updateSubMomentType(subMomentTypeId, body));
   } catch (error) {
     return handleRouteError(error);

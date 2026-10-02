@@ -87,6 +87,7 @@ export type SubMomentTypeRecord = {
   id: Id;
   name: string;
   code: string;
+  sortOrder: number;
   requiresFieldLocation: boolean;
   requiresGoalLocation: boolean;
   createdAt: string;

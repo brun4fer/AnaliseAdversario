@@ -196,6 +196,7 @@ async function ensureDatabaseDefaults(ownerId: string) {
         ownerId,
         name: type.name,
         code: type.code,
+        sortOrder: type.sortOrder,
         requiresFieldLocation: type.requiresFieldLocation,
         requiresGoalLocation: type.requiresGoalLocation,
       },
@@ -294,6 +295,7 @@ function mapSubMomentType(type: SubMomentType): SubMomentTypeRecord {
     id: type.id,
     name: type.name,
     code: type.code,
+    sortOrder: type.sortOrder,
     requiresFieldLocation: type.requiresFieldLocation,
     requiresGoalLocation: type.requiresGoalLocation,
     createdAt: type.createdAt.toISOString(),
@@ -382,6 +384,18 @@ function sortByDefaultOrder<T extends { code: string; createdAt: string; name: s
     }
 
     return a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name);
+  });
+}
+
+function sortSubMomentTypes(records: SubMomentTypeRecord[]) {
+  const groupOrder = new Map(["OO", "DO", "OT", "DT", "SP"].map((group, index) => [group, index]));
+  return [...records].sort((a, b) => {
+    const aGroup = a.code.split("_")[0];
+    const bGroup = b.code.split("_")[0];
+    const groupDifference = (groupOrder.get(aGroup) ?? Number.MAX_SAFE_INTEGER) - (groupOrder.get(bGroup) ?? Number.MAX_SAFE_INTEGER);
+    if (groupDifference !== 0) return groupDifference;
+    if (aGroup !== bGroup) return aGroup.localeCompare(bGroup);
+    return a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt) || a.name.localeCompare(b.name);
   });
 }
 
@@ -505,7 +519,7 @@ export async function listSettings(): Promise<SettingsPayload> {
 
     return {
       momentTypes: sortByDefaultOrder(momentTypes.map(mapMomentType), defaultMomentTypes),
-      subMomentTypes: sortByDefaultOrder(subMomentTypes.map(mapSubMomentType), defaultSubMomentTypes),
+      subMomentTypes: sortSubMomentTypes(subMomentTypes.map(mapSubMomentType)),
       shortcuts: shortcuts.map(mapShortcut),
     };
   }
@@ -513,7 +527,7 @@ export async function listSettings(): Promise<SettingsPayload> {
   const store = getMemoryStore();
   return {
     momentTypes: sortByDefaultOrder(store.momentTypes, defaultMomentTypes),
-    subMomentTypes: sortByDefaultOrder(store.subMomentTypes, defaultSubMomentTypes),
+    subMomentTypes: sortSubMomentTypes(store.subMomentTypes),
     shortcuts: store.shortcuts,
   };
 }
@@ -1335,11 +1349,14 @@ export async function createSubMomentType(
     if (duplicate) {
       throw new Error("A submoment with this code already exists.");
     }
+    const groupPrefix = `${code.split("_")[0]}_`;
+    const lastType = await prisma.subMomentType.findFirst({ where: { ownerId, code: { startsWith: groupPrefix } }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
     const type = await prisma.subMomentType.create({
       data: {
         ownerId,
         name,
         code,
+        sortOrder: (lastType?.sortOrder ?? -1) + 1,
         requiresFieldLocation: false,
         requiresGoalLocation: false,
       },
@@ -1355,6 +1372,7 @@ export async function createSubMomentType(
     id: id(),
     name,
     code,
+    sortOrder: Math.max(-1, ...store.subMomentTypes.filter((item) => item.code.split("_")[0] === code.split("_")[0]).map((item) => item.sortOrder)) + 1,
     requiresFieldLocation: false,
     requiresGoalLocation: false,
     createdAt: timestamp,
@@ -1366,7 +1384,7 @@ export async function createSubMomentType(
 
 export async function updateSubMomentType(
   subMomentTypeId: string,
-  input: Partial<Pick<SubMomentTypeRecord, "name" | "code">>,
+  input: Partial<Pick<SubMomentTypeRecord, "name" | "code" | "sortOrder">>,
 ) {
   const name = input.name?.trim();
   const code = input.code?.trim().toUpperCase();
@@ -1376,6 +1394,10 @@ export async function updateSubMomentType(
   if (input.code !== undefined && !code) {
     throw new Error("The submoment code is required.");
   }
+  if (input.sortOrder !== undefined && !Number.isFinite(input.sortOrder)) {
+    throw new Error("The submoment position is invalid.");
+  }
+  const sortOrder = input.sortOrder === undefined ? undefined : Math.max(0, Math.trunc(input.sortOrder));
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     if (code) {
@@ -1389,6 +1411,7 @@ export async function updateSubMomentType(
       data: {
         ...(name !== undefined ? { name } : {}),
         ...(code !== undefined ? { code } : {}),
+        ...(sortOrder !== undefined ? { sortOrder } : {}),
       },
     });
     return mapSubMomentType(type);
@@ -1407,6 +1430,9 @@ export async function updateSubMomentType(
   }
   if (code !== undefined) {
     type.code = code;
+  }
+  if (sortOrder !== undefined) {
+    type.sortOrder = sortOrder;
   }
   type.updatedAt = now();
   return type;

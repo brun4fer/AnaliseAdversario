@@ -216,6 +216,7 @@ model SubMomentType {
   id                    String   @id @default(cuid())
   name                  String
   code                  String
+  sortOrder             Int      @default(0)
   requiresFieldLocation Boolean  @default(true)
   requiresGoalLocation  Boolean  @default(false)
   createdAt             DateTime @default(now())
