@@ -359,7 +359,9 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       ...current,
       moments: current.moments.map((moment) => ({
         ...moment,
-        subMoments: moment.subMoments.map((subMoment) => subMoment.id === saved.id ? saved : subMoment),
+        subMoments: moment.subMoments
+          .map((subMoment) => subMoment.id === saved.id ? saved : subMoment)
+          .sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)),
       })),
     } : current);
     setEditingSubMoment(null);

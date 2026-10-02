@@ -6,10 +6,11 @@ import { ArrowLeft, Check, ChevronLeft, ChevronRight, ChevronsRight, Cloud, File
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
+import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-controls";
 import { canonicalOutcome, displayMomentType, displayOutcome, perspectiveMomentTypeChoices, perspectiveQuery, type AnalysisPerspective } from "@/lib/analysis-perspective";
-import type { MatchDetail, MomentRecord, SettingsPayload, SubMomentRecord, SubMomentTypeRecord, UpdateMomentInput } from "@/lib/domain";
+import type { MatchDetail, MomentRecord, SettingsPayload, SubMomentRecord, SubMomentTypeRecord, UpdateMomentInput, UpdateSubMomentInput } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
 import { attachCloudVideo, getCloudVideoLibrary, getRemoteVideoUrl, uploadMatchVideo, type CloudVideoAsset } from "@/lib/remote-video-store";
@@ -36,8 +37,6 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
   const [restoringVideo, setRestoringVideo] = useState(true);
   const [editingSubmoment, setEditingSubmoment] = useState<SubMomentRecord | null>(null);
   const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
-  const [editTypeId, setEditTypeId] = useState("");
-  const [editTime, setEditTime] = useState("");
   const [managingType, setManagingType] = useState<SubMomentTypeRecord | "new" | null>(null);
   const [typeName, setTypeName] = useState("");
   const [typeCode, setTypeCode] = useState("");
@@ -216,21 +215,14 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
 
   function editSubmoment(submoment: SubMomentRecord) {
     setEditingSubmoment(submoment);
-    setEditTypeId(submoment.subMomentTypeId);
-    setEditTime(submoment.timeSeconds === null ? "" : String(submoment.timeSeconds));
   }
 
-  async function saveEditedSubmoment() {
-    if (!editingSubmoment || !selectedMoment) return;
-    const seconds = Number(editTime);
-    if (!editTypeId || editTime === "" || !Number.isFinite(seconds) || seconds < selectedMoment.startTimeSeconds || seconds > selectedMoment.endTimeSeconds) {
-      setError(`Choose a time between ${formatPreciseTime(selectedMoment.startTimeSeconds)} and ${formatPreciseTime(selectedMoment.endTimeSeconds)}.`);
-      return;
-    }
+  async function saveEditedSubmoment(submomentId: string, input: UpdateSubMomentInput) {
+    if (!selectedMoment) return;
     setSaving(true); setError(null);
     try {
-      const saved = await apiFetch<SubMomentRecord>(`/api/submoments/${editingSubmoment.id}`, { method: "PATCH", body: JSON.stringify({ subMomentTypeId: editTypeId, timeSeconds: seconds }) });
-      setMatch((current) => current ? { ...current, moments: current.moments.map((moment) => moment.id === selectedMoment.id ? { ...moment, subMoments: moment.subMoments.map((sub) => sub.id === saved.id ? saved : sub) } : moment) } : current);
+      const saved = await apiFetch<SubMomentRecord>(`/api/submoments/${submomentId}`, { method: "PATCH", body: JSON.stringify(input) });
+      setMatch((current) => current ? { ...current, moments: current.moments.map((moment) => moment.id === selectedMoment.id ? { ...moment, subMoments: moment.subMoments.map((sub) => sub.id === saved.id ? saved : sub).sort((a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0)) } : moment) } : current);
       setEditingSubmoment(null);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not update the submoment."); }
     finally { setSaving(false); }
@@ -365,7 +357,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
       <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(15rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
     </Panel>
     {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypeChoices} duration={videoRef.current?.duration || match.video?.durationSeconds || 0} onPreview={(start) => { if (videoRef.current) { videoRef.current.currentTime = start; void videoRef.current.play(); } }} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
-    {editingSubmoment && selectedMoment ? <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" role="dialog" aria-modal="true"><Panel className="w-full max-w-md p-5"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold text-white">Edit submoment</h2><Button size="icon" variant="ghost" aria-label="Close" onClick={() => setEditingSubmoment(null)}><X size={16} /></Button></div><div className="mt-4 grid gap-4"><label className="grid gap-2"><FieldLabel>Type</FieldLabel><Select value={editTypeId} onChange={(event) => setEditTypeId(event.target.value)}>{(editingSubmoment && !availableSubmoments.some((type) => type.id === editingSubmoment.subMomentTypeId) ? [editingSubmoment.subMomentType, ...availableSubmoments] : availableSubmoments).map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><div className="flex justify-between"><FieldLabel>Time in seconds</FieldLabel><span className="font-mono text-xs text-slate-400">{editTime === "" ? "—" : formatPreciseTime(Number(editTime))}</span></div><TextInput type="number" step="0.1" min={selectedMoment.startTimeSeconds} max={selectedMoment.endTimeSeconds} value={editTime} onChange={(event) => setEditTime(event.target.value)} /></label><Button variant="secondary" onClick={() => setEditTime(String(Math.round(currentTime * 10) / 10))}>Use current video time</Button></div><div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={() => setEditingSubmoment(null)}>Cancel</Button><Button variant="primary" disabled={saving} onClick={() => void saveEditedSubmoment()}>{saving ? "Saving…" : "Save changes"}</Button></div></Panel></div> : null}
+    {editingSubmoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubmoment} submomentTypes={availableSubmoments.some((type) => type.id === editingSubmoment.subMomentTypeId) ? availableSubmoments : [editingSubmoment.subMomentType, ...availableSubmoments]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={currentTime} onSave={saveEditedSubmoment} onClose={() => setEditingSubmoment(null)} /> : null}
     {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}
   </div>;
 }
