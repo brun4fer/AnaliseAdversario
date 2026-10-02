@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, CheckSquare, ChevronsRight, Download, FileVideo, ListVideo, Loader2, Pause, Pencil, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
-import { Badge, Button, FieldLabel, Panel, Select } from "@/components/ui";
+import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-controls";
 import type { MatchAnalysisRecord, MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMomentInput } from "@/lib/domain";
 import { canonicalOutcome, displayMoment, shortcutSourceTypeId } from "@/lib/analysis-perspective";
@@ -55,14 +55,20 @@ export function ReportsClient() {
   const [videoDuration, setVideoDuration] = useState(0);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   const analyses = useMemo<ReportAnalysis[]>(
     () => matches.flatMap((match) => match.analyses.map((analysis) => ({ match, analysis }))),
     [matches],
   );
+  const dateFilteredAnalyses = useMemo(
+    () => analyses.filter(({ match }) => isMatchInDateRange(match.matchDate, startDate, endDate)).sort((a, b) => compareMatchDates(a.match, b.match)),
+    [analyses, endDate, startDate],
+  );
   const selectedAnalyses = useMemo(
-    () => analyses.filter(({ analysis }) => selectedIds.includes(analysis.id)),
-    [analyses, selectedIds],
+    () => dateFilteredAnalyses.filter(({ analysis }) => selectedIds.includes(analysis.id)),
+    [dateFilteredAnalyses, selectedIds],
   );
   const selectedMatchIds = useMemo(
     () => [...new Set(selectedAnalyses.map(({ match }) => match.id))],
@@ -89,7 +95,7 @@ export function ReportsClient() {
   useEffect(() => () => { if (playingUrlRef.current?.startsWith("blob:")) URL.revokeObjectURL(playingUrlRef.current); }, []);
 
   const teamNames = useMemo(() => [...new Set(analyses.map(({ analysis }) => analysis.analysedTeamName))].sort((a, b) => a.localeCompare(b)), [analyses]);
-  const visibleMatches = useMemo(() => analyses.filter(({ analysis }) => !teamFilter || analysis.analysedTeamName === teamFilter), [analyses, teamFilter]);
+  const visibleMatches = useMemo(() => dateFilteredAnalyses.filter(({ analysis }) => !teamFilter || analysis.analysedTeamName === teamFilter), [dateFilteredAnalyses, teamFilter]);
   const selectedMomentType = settings?.momentTypes.find((type) => type.id === momentTypeId) || null;
   const availableSubmomentTypes = useMemo(() => getSubMomentTypesForMoment(settings?.subMomentTypes || [], selectedMomentType), [selectedMomentType, settings?.subMomentTypes]);
   const clips = useMemo<ReportClip[]>(() => {
@@ -103,7 +109,7 @@ export function ReportsClient() {
         .filter((moment) => !momentTypeId || moment.momentTypeId === momentTypeId)
         .filter((moment) => !subMomentTypeId || moment.subMoments.some((sub) => sub.subMomentTypeId === subMomentTypeId))
         .map((moment) => ({ match, moment, analysis }));
-    });
+    }).sort((a, b) => compareMatchDates(a.match, b.match) || a.moment.startTimeSeconds - b.moment.startTimeSeconds);
   }, [details, momentTypeId, selectedAnalyses, settings, subMomentTypeId]);
 
   const clipIds = useMemo(() => clips.map(reportClipKey), [clips]);
@@ -112,10 +118,7 @@ export function ReportsClient() {
     [clips, selectedClipIds],
   );
   const sortedVideoMatches = useMemo(
-    () => [...details].sort((a, b) => {
-      const dateOrder = (b.matchDate ? new Date(b.matchDate).getTime() : 0) - (a.matchDate ? new Date(a.matchDate).getTime() : 0);
-      return dateOrder || a.title.localeCompare(b.title);
-    }),
+    () => [...details].sort(compareMatchDates),
     [details],
   );
 
@@ -318,7 +321,7 @@ export function ReportsClient() {
     setExporting(true); setExportStatus("Starting export..."); stopPlayback(); setNotice(null);
     const zip = directory ? null : new JSZip();
     const missing = new Set<string>();
-    const reportRoot = `Report-${selectedIds.length}-analyses-${exportClips.length}-clips`;
+    const reportRoot = `Report-${selectedAnalyses.length}-analyses-${exportClips.length}-clips`;
     const indexRows: string[][] = [["match", "analysed_team", "moment", "start_seconds", "end_seconds", "submoments", "files"]];
     try {
       const byMatch = new Map<string, ReportClip[]>();
@@ -377,7 +380,7 @@ export function ReportsClient() {
         setExportStatus("Preparing the ZIP...");
         zip.file("report-index.csv", indexBlob);
         const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
-        downloadBlob(blob, `Report-${selectedIds.length}-analyses-${completed}-clips.zip`);
+        downloadBlob(blob, `Report-${selectedAnalyses.length}-analyses-${completed}-clips.zip`);
       }
       setNotice(missing.size ? `Export complete. Missing videos: ${[...missing].join(", ")}.` : `${completed} clips exported successfully.`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not export the report."); }
@@ -390,10 +393,10 @@ export function ReportsClient() {
     {notice && <div className="flex items-start justify-between gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><span>{notice}</span><button onClick={() => setNotice(null)}><X size={16} /></button></div>}
     {exporting && <div className="flex items-center gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><Loader2 className="shrink-0 animate-spin" size={17} /><span>{exportStatus || "Exporting clips..."}</span></div>}
     <div className="grid gap-5 xl:grid-cols-[23rem_minmax(0,1fr)]">
-      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="flex gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
+      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="grid grid-cols-2 gap-2"><label className="grid gap-1.5"><FieldLabel htmlFor="report-start-date">Start date</FieldLabel><TextInput id="report-start-date" type="date" value={startDate} max={endDate || undefined} onChange={(event) => { setStartDate(event.target.value); stopPlayback(); }} /></label><label className="grid gap-1.5"><FieldLabel htmlFor="report-end-date">End date</FieldLabel><TextInput id="report-end-date" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); stopPlayback(); }} /></label></div><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button><Button size="sm" variant="ghost" disabled={!startDate && !endDate} onClick={() => { setStartDate(""); setEndDate(""); stopPlayback(); }}>Clear dates</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.length === 0 ? <p className="p-4 text-sm text-slate-500">No matches in the selected date range.</p> : visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{formatReportDate(match.matchDate)} · {match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
       <div className="space-y-4">
         <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedIds.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
+        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedAnalyses.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
         {sortedVideoMatches.length ? <Panel className="overflow-hidden"><div className="border-b border-white/10 px-4 py-3"><FieldLabel>Full match videos</FieldLabel><p className="mt-1 text-xs text-slate-500">Matches ordered by date.</p></div><div className="hidden grid-cols-[minmax(0,1fr)_9rem_7rem] gap-3 border-b border-white/[.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500 sm:grid"><span>Match</span><span>Date</span><span className="text-right">Video</span></div><div className="divide-y divide-white/[.06]">{sortedVideoMatches.map((match) => <div key={match.id} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_7rem] sm:gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-white" title={match.title}>{match.title}</p><p className="mt-0.5 text-xs text-slate-500 sm:hidden">{formatReportDate(match.matchDate)}</p></div><p className="hidden text-xs text-slate-400 sm:block">{formatReportDate(match.matchDate)}</p><Button size="sm" className="w-full justify-center" disabled={!match.video} onClick={() => void downloadFullMatch(match)}><Download size={14}/>{match.video ? "Download" : "Unavailable"}</Button></div>)}</div></Panel> : null}
         {playing && clips[playing.index] ? <div ref={workspaceRef} data-video-workspace data-report-workspace className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <Panel className="report-video-panel self-start overflow-hidden">
@@ -470,6 +473,19 @@ function formatReportDate(value: string | null) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "No date";
   return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
+
+function isMatchInDateRange(value: string | null, startDate: string, endDate: string) {
+  if (!startDate && !endDate) return true;
+  if (!value) return false;
+  const date = value.slice(0, 10);
+  return (!startDate || date >= startDate) && (!endDate || date <= endDate);
+}
+
+function compareMatchDates(a: Pick<MatchSummary, "matchDate" | "title">, b: Pick<MatchSummary, "matchDate" | "title">) {
+  const aDate = a.matchDate?.slice(0, 10) ?? "";
+  const bDate = b.matchDate?.slice(0, 10) ?? "";
+  return bDate.localeCompare(aDate) || a.title.localeCompare(b.title);
 }
 
 function safeName(value: string) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-").replace(/\s+/g, " ").trim() || "Unnamed"; }

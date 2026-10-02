@@ -342,6 +342,7 @@ function mapMoment(moment: PrismaMomentWithRelations): MomentRecord {
     startTimeSeconds: moment.startTimeSeconds,
     endTimeSeconds: moment.endTimeSeconds,
     durationSeconds: moment.durationSeconds,
+    sortOrder: moment.sortOrder,
     notes: moment.notes,
     outcome: moment.outcome as "positive" | "negative" | null,
     createdAt: moment.createdAt.toISOString(),
@@ -938,6 +939,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
       const ownedVideo = await prisma.video.findFirst({ where: { id: input.videoId, matchId: input.matchId, match: { ownerId } }, select: { id: true } });
       if (!ownedVideo) throw new Error("Video not found.");
     }
+    const lastMoment = await prisma.moment.findFirst({ where: { matchId: input.matchId, momentTypeId: input.momentTypeId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
     const moment = await prisma.moment.create({
       data: {
         matchId: input.matchId,
@@ -946,6 +948,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
         startTimeSeconds: start,
         endTimeSeconds: end,
         durationSeconds: momentDuration(start, end),
+        sortOrder: input.sortOrder ?? (lastMoment?.sortOrder ?? -1) + 1,
         notes: normalizeOptionalText(input.notes),
         outcome: input.outcome ?? null,
       },
@@ -964,6 +967,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
   }
 
   const timestamp = now();
+  const lastSortOrder = Math.max(-1, ...store.moments.filter((item) => item.matchId === input.matchId && item.momentTypeId === input.momentTypeId).map((item) => item.sortOrder));
   const moment: MemoryMoment = {
     id: id(),
     matchId: input.matchId,
@@ -972,6 +976,7 @@ export async function createMoment(input: CreateMomentInput): Promise<MomentReco
     startTimeSeconds: start,
     endTimeSeconds: end,
     durationSeconds: momentDuration(start, end),
+    sortOrder: input.sortOrder ?? lastSortOrder + 1,
     notes: normalizeOptionalText(input.notes),
     outcome: input.outcome ?? null,
     createdAt: timestamp,
@@ -999,6 +1004,9 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
 
     const start = input.startTimeSeconds ?? current.startTimeSeconds;
     const end = Math.max(start, input.endTimeSeconds ?? current.endTimeSeconds);
+    if (input.sortOrder !== undefined && !Number.isFinite(input.sortOrder)) {
+      throw new Error("The moment position is invalid.");
+    }
     const moment = await prisma.moment.update({
       where: { id: momentId },
       data: {
@@ -1007,6 +1015,7 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
         startTimeSeconds: start,
         endTimeSeconds: end,
         durationSeconds: momentDuration(start, end),
+        ...(input.sortOrder !== undefined ? { sortOrder: Math.max(0, Math.trunc(input.sortOrder)) } : {}),
         ...(input.notes !== undefined ? { notes: normalizeOptionalText(input.notes) } : {}),
         ...(input.outcome !== undefined ? { outcome: input.outcome } : {}),
       },
@@ -1039,6 +1048,10 @@ export async function updateMoment(momentId: string, input: UpdateMomentInput): 
   if (input.endTimeSeconds !== undefined) {
     moment.endTimeSeconds = Math.max(moment.startTimeSeconds, input.endTimeSeconds);
   }
+  if (input.sortOrder !== undefined) {
+    if (!Number.isFinite(input.sortOrder)) throw new Error("The moment position is invalid.");
+    moment.sortOrder = Math.max(0, Math.trunc(input.sortOrder));
+  }
   moment.durationSeconds = momentDuration(moment.startTimeSeconds, moment.endTimeSeconds);
   if (input.notes !== undefined) {
     moment.notes = normalizeOptionalText(input.notes);
@@ -1060,6 +1073,22 @@ export async function deleteMoment(momentId: string) {
   const store = getMemoryStore();
   store.moments = store.moments.filter((moment) => moment.id !== momentId);
   store.subMoments = store.subMoments.filter((subMoment) => subMoment.momentId !== momentId);
+}
+
+export async function reorderMoments(momentIds: string[]) {
+  const uniqueIds = [...new Set(momentIds)];
+  if (uniqueIds.length !== momentIds.length || uniqueIds.length === 0) throw new Error("Invalid clip order.");
+  if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const moments = await prisma.moment.findMany({ where: { id: { in: uniqueIds }, match: { ownerId } }, select: { id: true, matchId: true, momentTypeId: true } });
+    if (moments.length !== uniqueIds.length || new Set(moments.map((moment) => moment.matchId)).size !== 1 || new Set(moments.map((moment) => moment.momentTypeId)).size !== 1) throw new Error("The clips must belong to the same moment group.");
+    await prisma.$transaction(uniqueIds.map((id, sortOrder) => prisma.moment.update({ where: { id }, data: { sortOrder } })));
+    return;
+  }
+  const store = getMemoryStore();
+  const moments = uniqueIds.map((id) => store.moments.find((moment) => moment.id === id));
+  if (moments.some((moment) => !moment) || new Set(moments.map((moment) => moment?.matchId)).size !== 1 || new Set(moments.map((moment) => moment?.momentTypeId)).size !== 1) throw new Error("The clips must belong to the same moment group.");
+  uniqueIds.forEach((id, sortOrder) => { const moment = store.moments.find((item) => item.id === id); if (moment) { moment.sortOrder = sortOrder; moment.updatedAt = now(); } });
 }
 
 export async function createSubMoment(input: CreateSubMomentInput): Promise<SubMomentRecord> {

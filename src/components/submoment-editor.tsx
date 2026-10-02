@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, ChevronsRight, Cloud, FileVideo, ListVideo, Loader2, Pause, Pencil, Play, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, ChevronsRight, Cloud, FileVideo, GripVertical, ListVideo, Loader2, Pause, Pencil, Play, Plus, RotateCcw, Trash2, Upload, X } from "lucide-react";
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
@@ -47,6 +47,9 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
   const [cloudLoading, setCloudLoading] = useState(false);
   const [cloudError, setCloudError] = useState<string | null>(null);
   const [attachingAssetId, setAttachingAssetId] = useState<string | null>(null);
+  const [draggingMomentId, setDraggingMomentId] = useState<string | null>(null);
+  const [dragOverMomentId, setDragOverMomentId] = useState<string | null>(null);
+  const [reorderingMoments, setReorderingMoments] = useState(false);
 
   useEffect(() => {
     void apiFetch(`/api/matches/${matchId}/analyses`, {
@@ -81,7 +84,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
 
   useEffect(() => () => { if (sourceUrl?.startsWith("blob:")) URL.revokeObjectURL(sourceUrl); }, [sourceUrl]);
 
-  const moments = useMemo(() => (match?.moments || []).filter((moment) => moment.momentTypeId === filterId), [filterId, match?.moments]);
+  const moments = useMemo(() => (match?.moments || []).filter((moment) => moment.momentTypeId === filterId).sort((a, b) => a.sortOrder - b.sortOrder || a.startTimeSeconds - b.startTimeSeconds), [filterId, match?.moments]);
   const canonicalMomentTypes = useMemo(() => settings?.momentTypes || [], [settings?.momentTypes]);
   const momentTypeChoices = useMemo(() => perspectiveMomentTypeChoices(canonicalMomentTypes, perspective), [canonicalMomentTypes, perspective]);
   const selectedIndex = moments.findIndex((moment) => moment.id === selectedId);
@@ -182,6 +185,26 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     }
   }
 
+  async function reorderMoments(sourceId: string, targetId: string) {
+    if (sourceId === targetId || reorderingMoments) return;
+    const sourceIndex = moments.findIndex((moment) => moment.id === sourceId);
+    const targetIndex = moments.findIndex((moment) => moment.id === targetId);
+    if (sourceIndex < 0 || targetIndex < 0) return;
+    const reordered = [...moments];
+    const [moved] = reordered.splice(sourceIndex, 1);
+    reordered.splice(targetIndex, 0, moved);
+    setReorderingMoments(true); setError(null);
+    try {
+      await apiFetch<void>("/api/moments/reorder", { method: "POST", body: JSON.stringify({ momentIds: reordered.map((moment) => moment.id) }) });
+      const positions = new Map(reordered.map((moment, sortOrder) => [moment.id, sortOrder]));
+      setMatch((current) => current ? { ...current, moments: current.moments.map((moment) => positions.has(moment.id) ? { ...moment, sortOrder: positions.get(moment.id) as number } : moment) } : current);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not change the clip position.");
+    } finally {
+      setReorderingMoments(false); setDraggingMomentId(null); setDragOverMomentId(null);
+    }
+  }
+
   function chooseType(type: SubMomentTypeRecord) {
     videoRef.current?.pause(); setContinuous(false); setPendingType(type);
   }
@@ -257,26 +280,6 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
       setSettings({ ...settings, subMomentTypes: settings.subMomentTypes.filter((item) => item.id !== type.id) });
       setPendingType((current) => current?.id === type.id ? null : current);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not delete the submoment type."); }
-  }
-
-  async function moveType(type: SubMomentTypeRecord, direction: -1 | 1) {
-    if (!settings) return;
-    const currentIndex = availableSubmoments.findIndex((item) => item.id === type.id);
-    const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= availableSubmoments.length) return;
-    const reordered = [...availableSubmoments];
-    const [moved] = reordered.splice(currentIndex, 1);
-    reordered.splice(nextIndex, 0, moved);
-    setSaving(true); setError(null);
-    try {
-      const savedTypes = await Promise.all(reordered.map((item, sortOrder) => apiFetch<SubMomentTypeRecord>(`/api/settings/submoment-types/${item.id}`, { method: "PATCH", body: JSON.stringify({ sortOrder }) })));
-      const savedById = new Map(savedTypes.map((item) => [item.id, item]));
-      setSettings({ ...settings, subMomentTypes: settings.subMomentTypes.map((item) => savedById.get(item.id) ?? item) });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not change the submoment position.");
-    } finally {
-      setSaving(false);
-    }
   }
 
   async function loadVideo(file?: File) {
@@ -356,7 +359,8 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
         <Panel className="overflow-y-auto xl:absolute xl:inset-0">
           <div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-2.5 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({moments.length})</div>
           {moments.length === 0 ? <p className="p-4 text-sm text-slate-400">There are no moments of this type.</p> : moments.map((moment, index) => (
-            <div key={moment.id} className={`flex min-h-9 items-center gap-1 border-b border-white/[.06] px-2 py-1 ${selectedMoment?.id === moment.id ? "bg-cyan-300/10" : "hover:bg-white/[.035]"}`}>
+            <div key={moment.id} onDragOver={(event) => { if (!draggingMomentId || draggingMomentId === moment.id) return; event.preventDefault(); event.dataTransfer.dropEffect = "move"; setDragOverMomentId(moment.id); }} onDragLeave={() => setDragOverMomentId((current) => current === moment.id ? null : current)} onDrop={(event) => { event.preventDefault(); const sourceId = draggingMomentId || event.dataTransfer.getData("text/plain"); if (sourceId) void reorderMoments(sourceId, moment.id); }} className={`flex min-h-9 items-center gap-1 border-b border-white/[.06] px-2 py-1 transition ${dragOverMomentId === moment.id ? "border-cyan-300 bg-cyan-300/15" : selectedMoment?.id === moment.id ? "bg-cyan-300/10" : "hover:bg-white/[.035]"} ${draggingMomentId === moment.id ? "opacity-50" : ""}`}>
+              <button type="button" draggable={!reorderingMoments} onDragStart={(event) => { event.dataTransfer.effectAllowed = "move"; event.dataTransfer.setData("text/plain", moment.id); setDraggingMomentId(moment.id); }} onDragEnd={() => { setDraggingMomentId(null); setDragOverMomentId(null); }} className="shrink-0 cursor-grab touch-none text-slate-600 hover:text-cyan-200 active:cursor-grabbing" title="Drag to change clip position" aria-label={`Drag clip ${index + 1} to change its position`}><GripVertical size={13} /></button>
               <button type="button" onClick={() => selectMoment(moment)} className="flex min-w-0 flex-1 items-center gap-1.5 text-left hover:text-cyan-100">
                 <span className="w-4 shrink-0 font-mono text-[9px] text-slate-500">{index + 1}</span>
                 <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-white">{formatPreciseTime(moment.startTimeSeconds)} – {formatPreciseTime(moment.endTimeSeconds)}</span>
@@ -374,7 +378,7 @@ export function SubmomentEditor({ matchId, perspective }: { matchId: string; per
     </div>
     <Panel className="shrink-0 p-2">
       <div className="flex items-center justify-between gap-3"><p className="text-sm text-slate-300">Manage submoment buttons</p><Button size="sm" variant="primary" onClick={openNewType}><Plus size={14} />Add submoment</Button></div>
-      <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(19rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type, index) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" disabled={saving || index === 0} title="Move submoment up" aria-label={`Move ${type.name} up`} onClick={() => void moveType(type, -1)}><ChevronUp size={13} /></Button><Button size="icon" variant="secondary" disabled={saving || index === availableSubmoments.length - 1} title="Move submoment down" aria-label={`Move ${type.name} down`} onClick={() => void moveType(type, 1)}><ChevronDown size={13} /></Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
+      <div className="mt-3 grid max-h-[5rem] grid-flow-col grid-rows-2 auto-cols-[minmax(15rem,1fr)] gap-2 overflow-x-auto pb-1">{availableSubmoments.map((type) => <div key={type.id} className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] gap-1"><Button size="sm" className="min-w-0 truncate" title={type.name} variant={pendingType?.id === type.id ? "primary" : "secondary"} onClick={() => chooseType(type)}>{type.name}</Button><Button size="icon" variant="secondary" aria-label={`Edit ${type.name}`} onClick={() => openEditType(type)}><Pencil size={13} /></Button><Button size="icon" variant="danger" aria-label={`Delete ${type.name}`} onClick={() => void deleteType(type)}><Trash2 size={13} /></Button></div>)}</div>
     </Panel>
     {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypeChoices} duration={videoRef.current?.duration || match.video?.durationSeconds || 0} onPreview={(start) => { if (videoRef.current) { videoRef.current.currentTime = start; void videoRef.current.play(); } }} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
     {editingSubmoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubmoment} submomentTypes={availableSubmoments.some((type) => type.id === editingSubmoment.subMomentTypeId) ? availableSubmoments : [editingSubmoment.subMomentType, ...availableSubmoments]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={currentTime} onSave={saveEditedSubmoment} onClose={() => setEditingSubmoment(null)} /> : null}

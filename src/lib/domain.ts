@@ -75,6 +75,7 @@ export type MomentRecord = {
   startTimeSeconds: number;
   endTimeSeconds: number;
   durationSeconds: number;
+  sortOrder: number;
   notes: string | null;
   outcome: "positive" | "negative" | null;
   createdAt: string;
@@ -162,6 +163,7 @@ export type CreateMomentInput = {
   momentTypeId: Id;
   startTimeSeconds: number;
   endTimeSeconds: number;
+  sortOrder?: number;
   notes?: string | null;
   outcome?: "positive" | "negative" | null;
 };

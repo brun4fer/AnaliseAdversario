@@ -197,6 +197,7 @@ model Moment {
   startTimeSeconds Float
   endTimeSeconds   Float
   durationSeconds  Float
+  sortOrder        Int      @default(0)
   notes            String?
   outcome          String?
   createdAt        DateTime @default(now())
