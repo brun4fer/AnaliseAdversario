@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type {
   Match,
   MatchAnalysis,
+  MatchScoreEvent,
   MomentType,
   Prisma,
   ShortcutSetting,
@@ -22,6 +23,7 @@ import type {
   MatchAnalysisPerspective,
   MatchAnalysisRecord,
   MatchRecord,
+  MatchScoreEventRecord,
   MatchSummary,
   MomentRecord,
   MomentTypeRecord,
@@ -55,6 +57,12 @@ type MemoryStore = {
   subMomentTypes: SubMomentTypeRecord[];
   subMoments: MemorySubMoment[];
   shortcuts: ShortcutSettingRecord[];
+  scoreEvents: MatchScoreEventRecord[];
+};
+
+type MatchWithClubs = Match & {
+  homeClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
+  awayClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
 };
 
 type PrismaMomentWithRelations = Prisma.MomentGetPayload<{
@@ -143,6 +151,7 @@ function getMemoryStore() {
       subMomentTypes: defaultSubMomentTypes.map((type) => ({ ...type })),
       subMoments: [],
       shortcuts: buildDefaultShortcuts(defaultMomentTypes).map((shortcut) => ({ ...shortcut })),
+      scoreEvents: [],
     };
   }
 
@@ -215,7 +224,7 @@ async function ensureDatabaseDefaults(ownerId: string) {
   globalForStore.databaseDefaultsVersion = databaseDefaultsVersion;
 }
 
-function mapMatch(match: Match): MatchRecord {
+function mapMatch(match: MatchWithClubs): MatchRecord {
   return {
     id: match.id,
     title: match.title,
@@ -234,8 +243,26 @@ function mapMatch(match: Match): MatchRecord {
     firstHalfEndSeconds: match.firstHalfEndSeconds,
     secondHalfStartSeconds: match.secondHalfStartSeconds,
     secondHalfEndSeconds: match.secondHalfEndSeconds,
+    homeClubName: match.homeClub?.name ?? null,
+    homeClubShortName: match.homeClub?.shortName ?? null,
+    homeClubLogoDataUrl: match.homeClub?.logoDataUrl ?? null,
+    awayClubName: match.awayClub?.name ?? null,
+    awayClubShortName: match.awayClub?.shortName ?? null,
+    awayClubLogoDataUrl: match.awayClub?.logoDataUrl ?? null,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
+  };
+}
+
+function mapScoreEvent(event: MatchScoreEvent): MatchScoreEventRecord {
+  return {
+    id: event.id,
+    matchId: event.matchId,
+    timeSeconds: event.timeSeconds,
+    homeScore: event.homeScore,
+    awayScore: event.awayScore,
+    createdAt: event.createdAt.toISOString(),
+    updatedAt: event.updatedAt.toISOString(),
   };
 }
 
@@ -540,6 +567,8 @@ export async function listMatches(): Promise<MatchSummary[]> {
     const matches = await prisma.match.findMany({
       where: { ownerId },
       include: {
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
         _count: { select: { moments: true } },
@@ -576,8 +605,11 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
     const match = await prisma.match.findUnique({
       where: { id: matchId, ownerId },
       include: {
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
+        scoreEvents: { orderBy: [{ timeSeconds: "asc" }, { createdAt: "asc" }] },
         moments: {
           include: {
             momentType: true,
@@ -602,6 +634,7 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
       momentCount: match.moments.length,
       analyses: match.analyses.map((analysis) => mapMatchAnalysis(analysis, mappedMatch)),
       moments: match.moments.map(mapMoment),
+      scoreEvents: match.scoreEvents.map(mapScoreEvent),
     };
   }
 
@@ -622,6 +655,7 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
     momentCount: moments.length,
     analyses: store.matchAnalyses.filter((analysis) => analysis.matchId === matchId).map((analysis) => hydrateMemoryMatchAnalysis(analysis, match)),
     moments,
+    scoreEvents: store.scoreEvents.filter((event) => event.matchId === matchId).sort((a, b) => a.timeSeconds - b.timeSeconds || a.createdAt.localeCompare(b.createdAt)),
   };
 }
 
@@ -701,6 +735,12 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     firstHalfEndSeconds: input.firstHalfEndSeconds ?? null,
     secondHalfStartSeconds: input.secondHalfStartSeconds ?? null,
     secondHalfEndSeconds: input.secondHalfEndSeconds ?? null,
+    homeClubName: null,
+    homeClubShortName: null,
+    homeClubLogoDataUrl: null,
+    awayClubName: null,
+    awayClubShortName: null,
+    awayClubLogoDataUrl: null,
     createdAt,
     updatedAt: createdAt,
   };
@@ -816,6 +856,45 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   match.updatedAt = now();
 
   return match;
+}
+
+export async function createMatchScoreEvent(
+  matchId: string,
+  input: { timeSeconds: number; homeScore: number; awayScore: number },
+): Promise<MatchScoreEventRecord> {
+  const timeSeconds = Math.max(0, Math.round(Number(input.timeSeconds) * 10) / 10);
+  const homeScore = Math.max(0, Math.floor(Number(input.homeScore)));
+  const awayScore = Math.max(0, Math.floor(Number(input.awayScore)));
+  if (![timeSeconds, homeScore, awayScore].every(Number.isFinite)) throw new Error("Invalid score or video time.");
+
+  if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const match = await prisma.match.findFirst({ where: { id: matchId, ownerId }, select: { id: true } });
+    if (!match) throw new Error("Match not found.");
+    return mapScoreEvent(await prisma.matchScoreEvent.create({ data: { matchId, timeSeconds, homeScore, awayScore } }));
+  }
+
+  const store = getMemoryStore();
+  if (!store.matches.some((match) => match.id === matchId)) throw new Error("Match not found.");
+  const createdAt = now();
+  const event: MatchScoreEventRecord = { id: id(), matchId, timeSeconds, homeScore, awayScore, createdAt, updatedAt: createdAt };
+  store.scoreEvents.push(event);
+  return event;
+}
+
+export async function deleteMatchScoreEvent(matchId: string, eventId: string) {
+  if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const event = await prisma.matchScoreEvent.findFirst({ where: { id: eventId, matchId, match: { ownerId } }, select: { id: true } });
+    if (!event) throw new Error("Score change not found.");
+    await prisma.matchScoreEvent.delete({ where: { id: event.id } });
+    return;
+  }
+
+  const store = getMemoryStore();
+  const index = store.scoreEvents.findIndex((event) => event.id === eventId && event.matchId === matchId);
+  if (index < 0) throw new Error("Score change not found.");
+  store.scoreEvents.splice(index, 1);
 }
 
 export async function deleteMatch(matchId: string) {
@@ -1465,6 +1544,26 @@ export async function updateSubMomentType(
   }
   type.updatedAt = now();
   return type;
+}
+
+export async function reorderSubMomentTypes(subMomentTypeIds: string[]) {
+  const ids = [...new Set(subMomentTypeIds)];
+  if (ids.length !== subMomentTypeIds.length || ids.length === 0) throw new Error("Invalid submoment order.");
+  if (shouldUseDatabase()) {
+    const ownerId = await requireCurrentUserId();
+    const records = await prisma.subMomentType.findMany({ where: { id: { in: ids }, ownerId }, select: { id: true, code: true } });
+    if (records.length !== ids.length) throw new Error("One or more submoments were not found.");
+    const groups = new Set(records.map((record) => record.code.split("_")[0]));
+    if (groups.size !== 1) throw new Error("Only submoments in the same group can be reordered.");
+    await prisma.$transaction(ids.map((id, sortOrder) => prisma.subMomentType.update({ where: { id, ownerId }, data: { sortOrder } })));
+    return;
+  }
+  const store = getMemoryStore();
+  const records = ids.map((id) => store.subMomentTypes.find((type) => type.id === id));
+  if (records.some((record) => !record)) throw new Error("One or more submoments were not found.");
+  const groups = new Set(records.map((record) => record!.code.split("_")[0]));
+  if (groups.size !== 1) throw new Error("Only submoments in the same group can be reordered.");
+  ids.forEach((id, sortOrder) => { const record = store.subMomentTypes.find((type) => type.id === id); if (record) { record.sortOrder = sortOrder; record.updatedAt = now(); } });
 }
 
 export async function deleteSubMomentType(subMomentTypeId: string) {

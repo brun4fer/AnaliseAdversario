@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 
 import { AppShell } from "@/components/app-shell";
+import { LanguageProvider } from "@/components/language-provider";
 import { PwaRegistrar } from "@/components/pwa-registrar";
 import { APP_NAME } from "@/lib/taxonomy";
 import "./globals.css";
@@ -32,7 +33,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <PwaRegistrar />
-        <AppShell>{children}</AppShell>
+        <LanguageProvider><AppShell>{children}</AppShell></LanguageProvider>
       </body>
     </html>
   );

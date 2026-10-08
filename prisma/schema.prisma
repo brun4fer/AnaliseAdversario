@@ -59,6 +59,7 @@ model Club {
   id String @id @default(cuid())
   name String
   shortName String?
+  logoDataUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   homeMatches Match[] @relation("HomeClub")
@@ -111,6 +112,7 @@ model Match {
   videos  Video[]
   moments Moment[]
   analyses MatchAnalysis[]
+  scoreEvents MatchScoreEvent[]
   season Season? @relation(fields: [seasonId], references: [id], onDelete: SetNull)
   homeClub Club? @relation("HomeClub", fields: [homeClubId], references: [id], onDelete: SetNull)
   awayClub Club? @relation("AwayClub", fields: [awayClubId], references: [id], onDelete: SetNull)
@@ -123,6 +125,20 @@ model Match {
   @@index([awayClubId])
   @@index([competitionId])
   @@index([ownerId])
+}
+
+model MatchScoreEvent {
+  id               String   @id @default(cuid())
+  matchId          String
+  timeSeconds      Float
+  homeScore        Int
+  awayScore        Int
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  match Match @relation(fields: [matchId], references: [id], onDelete: Cascade)
+
+  @@index([matchId, timeSeconds])
 }
 
 model MatchAnalysis {

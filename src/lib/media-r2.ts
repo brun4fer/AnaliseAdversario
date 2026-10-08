@@ -159,7 +159,7 @@ export function createMediaPlaybackUrl(key: string) {
 }
 
 export function createMediaDownloadUrl(key: string, fileName: string) {
-  const lifetime = 60 * 60;
+  const lifetime = 24 * 60 * 60;
   const safeName = fileName.replace(/[^A-Za-z0-9._-]+/g, "_") || "match-video";
   return { url: presignedUrl("GET", key, [["response-content-disposition", `attachment; filename="${safeName}"`]], lifetime), expiresAt: new Date(Date.now() + lifetime * 1000).toISOString() };
 }

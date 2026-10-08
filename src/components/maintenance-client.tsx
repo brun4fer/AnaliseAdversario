@@ -1,14 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ImagePlus, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import type { MaintenanceRecord } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 
 type Resource = "seasons" | "clubs" | "competitions";
-type FormState = { name: string; shortName: string; startDate: string; endDate: string; seasonId: string; clubIds: string[] };
-const emptyForm: FormState = { name: "", shortName: "", startDate: "", endDate: "", seasonId: "", clubIds: [] };
+type FormState = { name: string; shortName: string; logoDataUrl: string; startDate: string; endDate: string; seasonId: string; clubIds: string[] };
+const emptyForm: FormState = { name: "", shortName: "", logoDataUrl: "", startDate: "", endDate: "", seasonId: "", clubIds: [] };
 const tabs: { key: Resource; label: string; singular: string }[] = [
   { key: "seasons", label: "Seasons", singular: "season" },
   { key: "clubs", label: "Clubs / teams", singular: "club" },
@@ -36,17 +36,13 @@ export function MaintenanceClient() {
 
   useEffect(() => {
     setEditing(null); setForm(emptyForm); setError("");
-    Promise.all([
-      apiFetch<MaintenanceRecord[]>(`/api/maintenance/${resource}`),
-      apiFetch<MaintenanceRecord[]>("/api/maintenance/seasons"),
-      apiFetch<MaintenanceRecord[]>("/api/maintenance/clubs"),
-    ]).then(([records, seasonRecords, clubRecords]) => { setItems(records); setSeasons(seasonRecords); setClubs(clubRecords); })
-      .catch((err: Error) => setError(err.message));
+    void load().catch((err: Error) => setError(err.message));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resource]);
 
   function edit(item: MaintenanceRecord) {
     setEditing(item);
-    setForm({ name: item.name, shortName: item.shortName || "", startDate: item.startDate?.slice(0, 10) || "", endDate: item.endDate?.slice(0, 10) || "", seasonId: item.seasonId || "", clubIds: item.clubIds || [] });
+    setForm({ name: item.name, shortName: item.shortName || "", logoDataUrl: item.logoDataUrl || "", startDate: item.startDate?.slice(0, 10) || "", endDate: item.endDate?.slice(0, 10) || "", seasonId: item.seasonId || "", clubIds: item.clubIds || [] });
   }
 
   async function submit(event: React.FormEvent) {
@@ -67,6 +63,14 @@ export function MaintenanceClient() {
     setForm((currentForm) => ({ ...currentForm, clubIds: currentForm.clubIds.includes(id) ? currentForm.clubIds.filter((clubId) => clubId !== id) : [...currentForm.clubIds, id] }));
   }
 
+  async function selectLogo(file?: File) {
+    if (!file) return;
+    try {
+      const logoDataUrl = await resizeLogo(file);
+      setForm((currentForm) => ({ ...currentForm, logoDataUrl }));
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not read the logo."); }
+  }
+
   return <div className="mx-auto max-w-6xl space-y-5">
     <div><p className="text-xs uppercase tracking-[.24em] text-cyan-200/80">Configuration</p><h1 className="mt-2 text-3xl font-semibold text-white">Maintenance</h1><p className="mt-2 text-sm text-slate-400">Manage seasons, competitions and their participating clubs.</p></div>
     <div className="flex flex-wrap gap-2">{tabs.map((tab) => <Button key={tab.key} variant={resource === tab.key ? "primary" : "secondary"} onClick={() => setResource(tab.key)}>{tab.label}</Button>)}</div>
@@ -75,16 +79,38 @@ export function MaintenanceClient() {
       <Panel className="p-5"><h2 className="mb-4 font-semibold text-white">{editing ? "Edit" : "Add"} {current.singular}</h2>
         <form className="grid gap-4" onSubmit={submit}>
           <label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
-          {resource === "clubs" && <label className="grid gap-2"><FieldLabel>Short name</FieldLabel><TextInput value={form.shortName} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></label>}
-          {resource === "seasons" && <><label className="grid gap-2"><FieldLabel>Start date</FieldLabel><TextInput type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label><label className="grid gap-2"><FieldLabel>End date</FieldLabel><TextInput type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></label></>}
-          {resource === "competitions" && <>
-            <label className="grid gap-2"><FieldLabel>Season</FieldLabel><Select value={form.seasonId} onChange={(event) => setForm({ ...form, seasonId: event.target.value })} required><option value="">Select…</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</Select></label>
-            <div className="grid gap-2"><FieldLabel>Participating clubs</FieldLabel><div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2">{clubs.length === 0 ? <p className="p-2 text-xs text-amber-200/70">Create the clubs first.</p> : clubs.map((club) => <label key={club.id} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm text-slate-200 hover:bg-white/[.05]"><input type="checkbox" checked={form.clubIds.includes(club.id)} onChange={() => toggleClub(club.id)} className="h-4 w-4 accent-cyan-300" />{club.name}</label>)}</div></div>
+          {resource === "clubs" && <>
+            <label className="grid gap-2"><FieldLabel>Short name</FieldLabel><TextInput value={form.shortName} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></label>
+            <div className="grid gap-2"><FieldLabel>Club logo</FieldLabel><div className="flex items-center gap-3">
+              {form.logoDataUrl ? <img src={form.logoDataUrl} alt="Club logo preview" className="h-16 w-16 rounded-lg border border-white/10 bg-white/[.04] object-contain p-1" /> : <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-white/15 text-slate-600"><ImagePlus size={22}/></div>}
+              <div className="flex flex-wrap gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[.05] px-3 text-sm text-slate-200 hover:bg-white/[.09]"><ImagePlus size={15}/>Choose image<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => void selectLogo(event.target.files?.[0])}/></label>{form.logoDataUrl ? <Button type="button" size="sm" variant="ghost" onClick={() => setForm({ ...form, logoDataUrl: "" })}><X size={14}/>Remove</Button> : null}</div>
+            </div><p className="text-xs text-slate-500">PNG, JPG or WebP. The image is resized automatically.</p></div>
           </>}
+          {resource === "seasons" && <><label className="grid gap-2"><FieldLabel>Start date</FieldLabel><TextInput type="date" value={form.startDate} onChange={(event) => setForm({ ...form, startDate: event.target.value })} /></label><label className="grid gap-2"><FieldLabel>End date</FieldLabel><TextInput type="date" value={form.endDate} onChange={(event) => setForm({ ...form, endDate: event.target.value })} /></label></>}
+          {resource === "competitions" && <><label className="grid gap-2"><FieldLabel>Season</FieldLabel><Select value={form.seasonId} onChange={(event) => setForm({ ...form, seasonId: event.target.value })} required><option value="">Select…</option>{seasons.map((season) => <option key={season.id} value={season.id}>{season.name}</option>)}</Select></label><div className="grid gap-2"><FieldLabel>Participating clubs</FieldLabel><div className="max-h-56 space-y-1 overflow-y-auto rounded-md border border-white/10 bg-black/20 p-2">{clubs.length === 0 ? <p className="p-2 text-xs text-amber-200/70">Create the clubs first.</p> : clubs.map((club) => <label key={club.id} className="flex cursor-pointer items-center gap-3 rounded px-2 py-2 text-sm text-slate-200 hover:bg-white/[.05]"><input type="checkbox" checked={form.clubIds.includes(club.id)} onChange={() => toggleClub(club.id)} className="h-4 w-4 accent-cyan-300" />{club.name}</label>)}</div></div></>}
           <div className="flex gap-2"><Button variant="primary"><Plus size={16} />{editing ? "Save" : "Add"}</Button>{editing && <Button type="button" onClick={() => { setEditing(null); setForm(emptyForm); }}>Cancel</Button>}</div>
         </form>
       </Panel>
-      <Panel className="divide-y divide-white/10 overflow-hidden">{items.length === 0 ? <p className="p-6 text-sm text-slate-400">There are no records yet.</p> : items.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div><p className="font-medium text-white">{item.name}</p><p className="text-xs text-slate-500">{resource === "clubs" ? (item.shortName || "No short name") : resource === "seasons" ? `${item.startDate?.slice(0, 10) || "—"} — ${item.endDate?.slice(0, 10) || "—"}` : `${seasons.find((season) => season.id === item.seasonId)?.name || "No season"} · ${item.clubIds?.length || 0} clubs`}</p></div><div className="flex gap-1"><Button size="icon" onClick={() => edit(item)} aria-label="Edit"><Pencil size={15} /></Button><Button size="icon" variant="danger" onClick={() => void remove(item)} aria-label="Delete"><Trash2 size={15} /></Button></div></div>)}</Panel>
+      <Panel className="divide-y divide-white/10 overflow-hidden">{items.length === 0 ? <p className="p-6 text-sm text-slate-400">There are no records yet.</p> : items.map((item) => <div key={item.id} className="flex items-center justify-between gap-4 p-4"><div className="flex min-w-0 items-center gap-3">{resource === "clubs" ? <ClubLogo item={item}/> : null}<div className="min-w-0"><p className="truncate font-medium text-white">{item.name}</p><p className="text-xs text-slate-500">{resource === "clubs" ? (item.shortName || "No short name") : resource === "seasons" ? `${item.startDate?.slice(0, 10) || "—"} — ${item.endDate?.slice(0, 10) || "—"}` : `${seasons.find((season) => season.id === item.seasonId)?.name || "No season"} · ${item.clubIds?.length || 0} clubs`}</p></div></div><div className="flex gap-1"><Button size="icon" onClick={() => edit(item)} aria-label="Edit"><Pencil size={15} /></Button><Button size="icon" variant="danger" onClick={() => void remove(item)} aria-label="Delete"><Trash2 size={15} /></Button></div></div>)}</Panel>
     </div>
   </div>;
+}
+
+function ClubLogo({ item }: { item: MaintenanceRecord }) {
+  return item.logoDataUrl ? <img src={item.logoDataUrl} alt="" className="h-10 w-10 shrink-0 rounded-md bg-white/[.04] object-contain p-1"/> : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/[.04] text-xs font-bold text-slate-500">{item.shortName?.slice(0, 2) || item.name.slice(0, 2)}</div>;
+}
+
+async function resizeLogo(file: File) {
+  if (!file.type.startsWith("image/")) throw new Error("Choose a valid image.");
+  const source = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => { const next = new Image(); next.onload = () => resolve(next); next.onerror = () => reject(new Error("Could not read the logo.")); next.src = source; });
+    const size = 256;
+    const canvas = document.createElement("canvas"); canvas.width = size; canvas.height = size;
+    const context = canvas.getContext("2d"); if (!context) throw new Error("Could not prepare the logo.");
+    const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+    const width = image.naturalWidth * scale; const height = image.naturalHeight * scale;
+    context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+    return canvas.toDataURL("image/png", .9);
+  } finally { URL.revokeObjectURL(source); }
 }

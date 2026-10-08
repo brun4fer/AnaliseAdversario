@@ -9,9 +9,11 @@ import { apiFetch } from "@/lib/http";
 import type { MatchAnalysisPerspective, MatchAnalysisRecord, MatchSummary } from "@/lib/domain";
 import { formatTime } from "@/lib/time";
 import { Badge, Button, Panel, TextInput } from "@/components/ui";
+import { useLanguage, type Locale } from "@/components/language-provider";
 
 export function DashboardClient() {
   const router = useRouter();
+  const { locale } = useLanguage();
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -180,7 +182,7 @@ export function DashboardClient() {
                 </div>
 
                 <div className="mt-4 grid gap-2 text-sm text-slate-400">
-                  <Info icon={<Calendar size={15} />} value={formatDate(match.matchDate)} />
+                  <Info icon={<Calendar size={15} />} value={formatDate(match.matchDate, locale)} />
                   <Info icon={<Clapperboard size={15} />} value={match.competition ?? "Competition not set"} />
                   {match.video?.storageStatus === "READY" ? (
                     <Info icon={<Play size={15} />} value={`${match.video.fileName} - ${formatTime(match.video.durationSeconds)}`} />
@@ -264,10 +266,10 @@ function Info({ icon, value }: { icon: React.ReactNode; value: string }) {
   );
 }
 
-function formatDate(value: string | null) {
+function formatDate(value: string | null, locale: Locale) {
   if (!value) {
     return "Date not set";
   }
 
-  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium" }).format(new Date(value));
+  return new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", { dateStyle: "medium" }).format(new Date(value));
 }

@@ -28,11 +28,13 @@ import {
 
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
+import { BroadcastScoreboard } from "@/components/broadcast-scoreboard";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-controls";
+import { useSoundPreference, VideoAudioToggle } from "@/components/video-audio-toggle";
 import { useKeyboardShortcuts, type ShortcutBinding } from "@/hooks/use-keyboard-shortcuts";
 import { useVideoPlayer } from "@/hooks/use-video-player";
 import { cn } from "@/lib/cn";
@@ -50,6 +52,7 @@ import type {
   CreateSubMomentInput,
   MatchDetail,
   MatchRecord,
+  MatchScoreEventRecord,
   MomentRecord,
   MomentTypeRecord,
   SettingsPayload,
@@ -138,6 +141,8 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
   const [videoFinished, setVideoFinished] = useState(false);
   const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
   const [editingSubMoment, setEditingSubMoment] = useState<SubMomentRecord | null>(null);
+  const [savingScore, setSavingScore] = useState(false);
+  const { soundEnabled, setSoundEnabled } = useSoundPreference();
 
   useEffect(() => {
     let active = true;
@@ -408,7 +413,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
             startTimeSeconds: currentVideoTime,
           },
         ]);
-        setNotice(`${momentType.code} iniciado aos ${formatPreciseTime(currentVideoTime)}.`);
+        setNotice(`${momentType.code} started at ${formatPreciseTime(currentVideoTime)}.`);
         return;
       }
 
@@ -668,6 +673,36 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
     setNotice(`Match period time saved at ${formatPreciseTime(seconds)}.`);
   }
 
+  async function saveScore(score: { homeScore: number; awayScore: number }) {
+    if (!match || savingScore) return;
+    setSavingScore(true);
+    try {
+      const event = await apiFetch<MatchScoreEventRecord>(`/api/matches/${match.id}/score-events`, {
+        method: "POST",
+        body: JSON.stringify({ ...score, timeSeconds: player.currentTime }),
+      });
+      setMatch((current) => current ? { ...current, scoreEvents: [...current.scoreEvents, event] } : current);
+    } catch (scoreError) {
+      setNotice(scoreError instanceof Error ? scoreError.message : "Could not save the score.");
+    } finally {
+      setSavingScore(false);
+    }
+  }
+
+  async function undoScore() {
+    if (!match || savingScore || match.scoreEvents.length === 0) return;
+    const latest = [...match.scoreEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    setSavingScore(true);
+    try {
+      await apiFetch(`/api/matches/${match.id}/score-events?eventId=${encodeURIComponent(latest.id)}`, { method: "DELETE" });
+      setMatch((current) => current ? { ...current, scoreEvents: current.scoreEvents.filter((event) => event.id !== latest.id) } : current);
+    } catch (scoreError) {
+      setNotice(scoreError instanceof Error ? scoreError.message : "Could not undo the score change.");
+    } finally {
+      setSavingScore(false);
+    }
+  }
+
   function reviewSubMoment(subMoment: SubMomentRecord) {
     setSelectedSubMomentId(subMoment.id);
     if (subMoment.timeSeconds !== null) {
@@ -704,6 +739,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         match: { ...match, opponentName: analysedTeamName },
         moment: displayMoment(selectedMoment, canonicalMomentTypes, perspective),
         quality: exportQuality,
+        includeAudio: soundEnabled,
         onStatus: setExportStatus,
       });
       downloadBlob(exported.blob, exported.fileName);
@@ -757,6 +793,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
           match: { ...match, opponentName: analysedTeamName },
           moment: visibleMoment,
           quality: exportQuality,
+          includeAudio: soundEnabled,
           onStatus: (status) => setExportStatus(`${index + 1} of ${moments.length}: ${status}`),
         });
         const indexedFileName = `${String(index + 1).padStart(3, "0")}-${exported.fileName}`;
@@ -810,6 +847,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
           match: { ...match, opponentName: analysedTeamName },
           moment: visibleMoment,
           quality: exportQuality,
+          includeAudio: soundEnabled,
           onStatus: (status) => setExportStatus(`${index + 1} of ${match.moments.length}: ${status}`),
         });
         const folder = visibleMoment.momentType.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "moments";
@@ -953,6 +991,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   crossOrigin="anonymous"
                   className="h-full w-full object-contain"
                   controls={false}
+                  muted={!soundEnabled}
                   playsInline
                   onLoadedMetadata={handleLoadedMetadata}
                   onTimeUpdate={player.handleTimeUpdate}
@@ -975,6 +1014,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   </div>
                 </div>
               )}
+              {player.sourceUrl ? <BroadcastScoreboard match={match} currentTime={player.currentTime} editable saving={savingScore} onChange={(score) => void saveScore(score)} onUndo={() => void undoScore()}/> : null}
             </div>
 
             <div className="shrink-0 border-t border-white/10 bg-pitch-950/90 p-2">
@@ -1012,6 +1052,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   <div className="flex overflow-hidden rounded-md border border-white/10">
                     {[1, 2, 4].map((rate) => <button key={rate} type="button" className={cn("h-8 px-2 text-[10px] transition", player.playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[0.04] text-slate-300 hover:bg-white/[0.1]")} onClick={() => player.setPlaybackRate(rate)}>{rate}×</button>)}
                   </div>
+                  <VideoAudioToggle soundEnabled={soundEnabled} onChange={setSoundEnabled}/>
                   <Button size="icon" variant="danger" className="h-8 w-8" disabled={match.moments.length === 0} title="Delete the last recorded moment" aria-label="Delete the last recorded moment" onClick={() => { const last = match.moments[match.moments.length - 1]; if (last) void deleteMoment(last); }}><Trash2 size={14} /></Button>
                   <div className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" aria-label="Match periods">
                     {([[
@@ -1046,7 +1087,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                     >
                       <span className="min-w-0">
                         <span className="block truncate text-xs font-semibold" style={{ color: type.color }}>{type.name}</span>
-                        {active ? <span className="mt-1 block text-[10px] text-cyan-100">A decorrer</span> : null}
+                        {active ? <span className="mt-1 block text-[10px] text-cyan-100">In progress</span> : null}
                       </span>
                       <span className="shrink-0 rounded border border-white/10 bg-black/20 px-1.5 py-0.5 text-[10px] text-slate-400">
                         {getShortcutForMomentType(type.id)}
@@ -1181,7 +1222,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <FieldLabel>Field</FieldLabel>
-                      <span className="text-[11px] text-slate-500">{selectedFieldMarkers.length} pontos</span>
+                      <span className="text-[11px] text-slate-500">{selectedFieldMarkers.length} points</span>
                     </div>
                     <TacticalField
                       value={null}
@@ -1192,7 +1233,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   <div>
                     <div className="mb-2 flex items-center justify-between gap-2">
                       <FieldLabel>Goal</FieldLabel>
-                      <span className="text-[11px] text-slate-500">{selectedGoalMarkers.length} pontos</span>
+                      <span className="text-[11px] text-slate-500">{selectedGoalMarkers.length} points</span>
                     </div>
                     <GoalTarget
                       value={null}

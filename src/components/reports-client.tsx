@@ -2,11 +2,13 @@
 
 import JSZip from "jszip";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, CheckSquare, ChevronsRight, Download, FileVideo, ListVideo, Loader2, Pause, Pencil, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
+import { Archive, CheckSquare, ChevronsRight, Download, FileVideo, Link2, ListVideo, Loader2, Pause, Pencil, Play, RotateCcw, Square, Trash2, X } from "lucide-react";
+import { BroadcastScoreboard } from "@/components/broadcast-scoreboard";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { Badge, Button, FieldLabel, Panel, Select, TextInput } from "@/components/ui";
 import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-controls";
+import { useSoundPreference, VideoAudioToggle } from "@/components/video-audio-toggle";
 import type { MatchAnalysisRecord, MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMomentInput } from "@/lib/domain";
 import { canonicalOutcome, displayMoment, shortcutSourceTypeId } from "@/lib/analysis-perspective";
 import { type ExportDirectory, isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
@@ -17,6 +19,7 @@ import { SmartVideoExportSession } from "@/lib/smart-video-export";
 import { getSubMomentTypesForMoment } from "@/lib/taxonomy";
 import { formatPreciseTime } from "@/lib/time";
 import { downloadBlob, exportQualityOptions, type ExportQuality } from "@/lib/video-export";
+import { useLanguage, type Locale } from "@/components/language-provider";
 
 type ReportAnalysis = { match: MatchSummary; analysis: MatchAnalysisRecord };
 type ReportClip = { match: MatchDetail; moment: MomentRecord; analysis: MatchAnalysisRecord };
@@ -24,6 +27,7 @@ type PlayingClip = { index: number; url: string; autoplay: boolean };
 type PendingOperation = "play" | "export";
 
 export function ReportsClient() {
+  const { locale } = useLanguage();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const playingUrlRef = useRef<string | null>(null);
@@ -57,6 +61,8 @@ export function ReportsClient() {
   const [selectedClipIds, setSelectedClipIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
+  const [creatingLinkId, setCreatingLinkId] = useState<string | null>(null);
+  const { soundEnabled, setSoundEnabled } = useSoundPreference();
 
   const analyses = useMemo<ReportAnalysis[]>(
     () => matches.flatMap((match) => match.analyses.map((analysis) => ({ match, analysis }))),
@@ -222,8 +228,29 @@ export function ReportsClient() {
   useVideoKeyboardSeek(videoRef, seekTo, Boolean(playing));
 
   async function downloadFullMatch(match: MatchDetail) {
-    try { const local = await getReportVideo(match.id); if (local) { downloadBlob(local, local.name || match.video?.fileName || `${match.title}.mp4`); return; } if (match.video?.storageStatus !== "READY") throw new Error("This full match video is not available."); const remote = await getRemoteVideoDownloadUrl(match.id); const link = document.createElement("a"); link.href = remote.url; link.rel = "noopener"; document.body.appendChild(link); link.click(); link.remove(); }
-    catch (error) { setNotice(error instanceof Error ? error.message : "The full match video could not be downloaded."); }
+    setExporting(true); setExportStatus(`Preparing ${match.title}…`); setNotice(null);
+    let exportVideo: Awaited<ReturnType<typeof getReportExportSource>> = null;
+    let session: SmartVideoExportSession | null = null;
+    try {
+      exportVideo = await getReportExportSource(match);
+      if (!exportVideo) throw new Error("This full match video is not available.");
+      session = new SmartVideoExportSession(exportVideo.source);
+      const exported = await session.exportFullMatch({ match, quality: exportQuality, includeAudio: soundEnabled, onStatus: setExportStatus });
+      downloadBlob(exported.blob, exported.fileName);
+      setNotice(`Full match exported with scoreboard${soundEnabled ? " and sound" : " without sound"}.`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "The full match video could not be exported."); }
+    finally { session?.dispose(); exportVideo?.release(); setExporting(false); setExportStatus(""); }
+  }
+
+  async function copyFullMatchLink(match: MatchDetail) {
+    if (match.video?.storageStatus !== "READY") { setNotice("This match must be available in the cloud before a link can be created."); return; }
+    setCreatingLinkId(match.id);
+    try {
+      const remote = await getRemoteVideoDownloadUrl(match.id);
+      await navigator.clipboard.writeText(remote.url);
+      setNotice(`Download link copied. It remains valid until ${new Intl.DateTimeFormat(undefined, { dateStyle: "short", timeStyle: "short" }).format(new Date(remote.expiresAt))}.`);
+    } catch (error) { setNotice(error instanceof Error ? error.message : "Could not create the download link."); }
+    finally { setCreatingLinkId(null); }
   }
 
   async function getReportExportSource(match: MatchDetail) {
@@ -340,12 +367,13 @@ export function ReportsClient() {
               match: { ...clip.match, title: `${clip.match.title} - ${clip.analysis.analysedTeamName}`, opponentName: clip.analysis.analysedTeamName },
               moment: clip.moment,
               quality: exportQuality,
+              includeAudio: soundEnabled,
               onStatus: (status) => setExportStatus(`${completed} of ${exportClips.length}: ${status}`),
             });
             const submomentFolders = subMomentTypeId
               ? [settings?.subMomentTypes.find((type) => type.id === subMomentTypeId)?.name || "Submoment"]
               : [...new Set(clip.moment.subMoments.map((sub) => sub.subMomentType.name))];
-            if (submomentFolders.length === 0) submomentFolders.push("Sem submomento");
+            if (submomentFolders.length === 0) submomentFolders.push("No submoment");
 
             const indexedFileName = `${String(completed).padStart(3, "0")}-${exported.fileName}`;
             const relativePaths = submomentFolders.map((submoment) =>
@@ -393,14 +421,14 @@ export function ReportsClient() {
     {notice && <div className="flex items-start justify-between gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><span>{notice}</span><button onClick={() => setNotice(null)}><X size={16} /></button></div>}
     {exporting && <div className="flex items-center gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><Loader2 className="shrink-0 animate-spin" size={17} /><span>{exportStatus || "Exporting clips..."}</span></div>}
     <div className="grid gap-5 xl:grid-cols-[23rem_minmax(0,1fr)]">
-      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="grid grid-cols-2 gap-2"><label className="grid gap-1.5"><FieldLabel htmlFor="report-start-date">Start date</FieldLabel><TextInput id="report-start-date" type="date" value={startDate} max={endDate || undefined} onChange={(event) => { setStartDate(event.target.value); stopPlayback(); }} /></label><label className="grid gap-1.5"><FieldLabel htmlFor="report-end-date">End date</FieldLabel><TextInput id="report-end-date" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); stopPlayback(); }} /></label></div><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button><Button size="sm" variant="ghost" disabled={!startDate && !endDate} onClick={() => { setStartDate(""); setEndDate(""); stopPlayback(); }}>Clear dates</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.length === 0 ? <p className="p-4 text-sm text-slate-500">No matches in the selected date range.</p> : visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{formatReportDate(match.matchDate)} · {match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
+      <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="grid grid-cols-2 gap-2"><label className="grid gap-1.5"><FieldLabel htmlFor="report-start-date">Start date</FieldLabel><TextInput id="report-start-date" type="date" value={startDate} max={endDate || undefined} onChange={(event) => { setStartDate(event.target.value); stopPlayback(); }} /></label><label className="grid gap-1.5"><FieldLabel htmlFor="report-end-date">End date</FieldLabel><TextInput id="report-end-date" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); stopPlayback(); }} /></label></div><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button><Button size="sm" variant="ghost" disabled={!startDate && !endDate} onClick={() => { setStartDate(""); setEndDate(""); stopPlayback(); }}>Clear dates</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.length === 0 ? <p className="p-4 text-sm text-slate-500">No matches in the selected date range.</p> : visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{formatReportDate(match.matchDate, locale)} · {match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
       <div className="space-y-4">
         <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
         <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedAnalyses.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
-        {sortedVideoMatches.length ? <Panel className="overflow-hidden"><div className="border-b border-white/10 px-4 py-3"><FieldLabel>Full match videos</FieldLabel><p className="mt-1 text-xs text-slate-500">Matches ordered by date.</p></div><div className="hidden grid-cols-[minmax(0,1fr)_9rem_7rem] gap-3 border-b border-white/[.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500 sm:grid"><span>Match</span><span>Date</span><span className="text-right">Video</span></div><div className="divide-y divide-white/[.06]">{sortedVideoMatches.map((match) => <div key={match.id} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_7rem] sm:gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-white" title={match.title}>{match.title}</p><p className="mt-0.5 text-xs text-slate-500 sm:hidden">{formatReportDate(match.matchDate)}</p></div><p className="hidden text-xs text-slate-400 sm:block">{formatReportDate(match.matchDate)}</p><Button size="sm" className="w-full justify-center" disabled={!match.video} onClick={() => void downloadFullMatch(match)}><Download size={14}/>{match.video ? "Download" : "Unavailable"}</Button></div>)}</div></Panel> : null}
+        {sortedVideoMatches.length ? <Panel className="overflow-hidden"><div className="border-b border-white/10 px-4 py-3"><FieldLabel>Full match videos</FieldLabel><p className="mt-1 text-xs text-slate-500">Matches ordered by date. Export burns the scoreboard into the video; copy link sends the original full match.</p></div><div className="hidden grid-cols-[minmax(0,1fr)_9rem_14rem] gap-3 border-b border-white/[.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500 sm:grid"><span>Match</span><span>Date</span><span className="text-right">Video</span></div><div className="divide-y divide-white/[.06]">{sortedVideoMatches.map((match) => <div key={match.id} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_14rem] sm:gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-white" title={match.title}>{match.title}</p><p className="mt-0.5 text-xs text-slate-500 sm:hidden">{formatReportDate(match.matchDate, locale)}</p></div><p className="hidden text-xs text-slate-400 sm:block">{formatReportDate(match.matchDate, locale)}</p><div className="grid grid-cols-2 gap-1"><Button size="sm" className="w-full justify-center" disabled={!match.video || exporting} onClick={() => void downloadFullMatch(match)}>{exporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14}/>} {match.video ? "Export" : "Unavailable"}</Button><Button size="sm" variant="secondary" className="w-full justify-center" disabled={match.video?.storageStatus !== "READY" || creatingLinkId === match.id} onClick={() => void copyFullMatchLink(match)}>{creatingLinkId === match.id ? <Loader2 size={14} className="animate-spin"/> : <Link2 size={14}/>}Copy link</Button></div></div>)}</div></Panel> : null}
         {playing && clips[playing.index] ? <div ref={workspaceRef} data-video-workspace data-report-workspace className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <Panel className="report-video-panel self-start overflow-hidden">
-            <div className="report-video-frame aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full object-contain" playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /></div>
+            <div className="report-video-frame relative aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full object-contain" muted={!soundEnabled} playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /><BroadcastScoreboard match={clips[playing.index].match} currentTime={currentTime}/></div>
             <div className="border-t border-white/10 p-2">
               <input aria-label="Clip position" type="range" min={clips[playing.index].moment.startTimeSeconds} max={Math.min(videoDuration || clips[playing.index].moment.endTimeSeconds, clips[playing.index].moment.endTimeSeconds)} step={.1} value={Math.max(clips[playing.index].moment.startTimeSeconds, Math.min(currentTime, clips[playing.index].moment.endTimeSeconds))} onChange={(event) => seekTo(Number(event.target.value))} className="h-1.5 w-full cursor-pointer accent-cyan-300"/>
               <div className="mt-2 flex flex-wrap items-center gap-1">
@@ -408,6 +436,7 @@ export function ReportsClient() {
                 <Button size="icon" className="h-8 w-8" variant="primary" aria-label={isPlaying ? "Pause" : "Play"} onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}>{isPlaying ? <Pause size={15}/> : <Play size={15}/>}</Button>
                 <Button size="icon" className="h-8 w-8" title="Forward 5 seconds (right arrow)" onClick={() => seekTo(currentTime + 5)}><ChevronsRight size={13}/></Button>
                 <div className="ml-1 flex overflow-hidden rounded-md border border-white/10">{[1, 2, 4].map((rate) => <button key={rate} type="button" className={`h-8 px-2 text-[10px] transition ${playbackRate === rate ? "bg-cyan-300 text-slate-950" : "bg-white/[.04] text-slate-300 hover:bg-white/[.1]"}`} onClick={() => changePlaybackRate(rate)}>{rate}×</button>)}</div>
+                <VideoAudioToggle soundEnabled={soundEnabled} onChange={setSoundEnabled}/>
                 <span className="ml-auto font-mono text-xs text-slate-300">{formatPreciseTime(currentTime)}</span>
                 <VideoFullscreenButton targetRef={workspaceRef}/>
               </div>
@@ -415,11 +444,12 @@ export function ReportsClient() {
             </div>
           </Panel>
           <div className="report-clip-list relative min-h-48 lg:min-h-0"><Panel className="divide-y divide-white/[.06] overflow-y-auto lg:absolute lg:inset-0"><div className="sticky top-0 z-10 border-b border-white/10 bg-pitch-950 px-3 py-2 text-xs uppercase tracking-[.18em] text-slate-500">Clips ({clips.length})</div>{clips.map((clip, index) => <ReportClipRow key={reportClipKey(clip)} clip={clip} active={playing?.index === index} selected={selectedClipIds.includes(reportClipKey(clip))} compact onSelect={() => toggleClip(reportClipKey(clip))} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel></div>
+          {editingClip && settings ? <MomentEditDialog moment={editingClip.moment} momentTypes={settings.momentTypes} duration={editingClip.match.video?.durationSeconds || 0} onSave={(_momentId, input) => updateReportMoment(editingClip, input)} onClose={() => setEditingClip(null)} /> : null}
         </div> : <Panel className="divide-y divide-white/[.06] overflow-hidden">{clips.length === 0 ? <div className="flex flex-col items-center p-10 text-center"><FileVideo className="text-slate-600" size={42} /><p className="mt-3 text-sm text-slate-400">Select at least one saved analysis to display clips.</p></div> : clips.map((clip, index) => <ReportClipRow key={reportClipKey(clip)} clip={clip} active={false} selected={selectedClipIds.includes(reportClipKey(clip))} onSelect={() => toggleClip(reportClipKey(clip))} onPlay={() => { setContinuous(false); void openClip(index, true); }} onOutcome={(outcome) => void toggleReportOutcome(clip, outcome)} onEdit={() => setEditingClip(clip)} onDelete={() => void deleteReportMoment(clip)} />)}</Panel>}
       </div>
     </div>
     {pendingOperation && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"><Panel className="max-h-[90vh] w-full max-w-2xl overflow-y-auto border-cyan-300/30 bg-pitch-950 shadow-2xl"><div className="flex items-start justify-between gap-4 border-b border-white/10 p-5"><div><p className="text-xs uppercase tracking-[.2em] text-cyan-200/80">Prepare {pendingOperation === "play" ? "playback" : "export"}</p><h2 className="mt-2 text-xl font-semibold text-white">Add missing videos</h2><p className="mt-2 text-sm text-slate-400">The action starts automatically as soon as all videos are available.</p></div><Button size="icon" variant="ghost" aria-label="Close" onClick={() => { pendingExportDirectoryRef.current = null; setPendingOperation(null); setMissingVideos([]); }}><X size={17} /></Button></div><div className="p-5"><label className="mb-4 flex cursor-pointer items-center justify-center gap-2 rounded-md border border-dashed border-cyan-300/35 bg-cyan-300/[.06] p-4 text-sm font-medium text-cyan-100 hover:bg-cyan-300/10"><CheckSquare size={17} />Select multiple videos<input type="file" accept="video/*" multiple className="hidden" onChange={(event) => void addSeveralVideos(event.target.files)} /></label>{videoPreparationError && <div className="mb-4 rounded-md border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">{videoPreparationError}</div>}<div className="space-y-2">{missingVideos.map((match) => <div key={match.id} className="flex flex-col gap-3 rounded-md border border-white/10 bg-white/[.035] p-3 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-medium text-white">{match.title}</p><p className="mt-1 truncate text-xs text-slate-500">Expected: {match.video?.fileName || "video for this match"}</p></div><label className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-white/10 bg-white/[.06] px-3 text-sm text-slate-100 hover:bg-white/[.1]"><FileVideo size={15} />Select video<input type="file" accept="video/*" className="hidden" onChange={(event) => void addVideo(match, event.target.files?.[0])} /></label></div>)}</div></div></Panel></div>}
-    {editingClip && settings ? <MomentEditDialog moment={editingClip.moment} momentTypes={settings.momentTypes} duration={editingClip.match.video?.durationSeconds || 0} onSave={(_momentId, input) => updateReportMoment(editingClip, input)} onClose={() => setEditingClip(null)} /> : null}
+    {editingClip && settings && !playing ? <MomentEditDialog moment={editingClip.moment} momentTypes={settings.momentTypes} duration={editingClip.match.video?.durationSeconds || 0} onSave={(_momentId, input) => updateReportMoment(editingClip, input)} onClose={() => setEditingClip(null)} /> : null}
   </div>;
 }
 
@@ -468,11 +498,11 @@ function ReportClipRow({
 
 function reportClipKey(clip: ReportClip) { return `${clip.analysis.id}:${clip.moment.id}`; }
 
-function formatReportDate(value: string | null) {
+function formatReportDate(value: string | null, locale: Locale) {
   if (!value) return "No date";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "No date";
-  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+  return new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
 function isMatchInDateRange(value: string | null, startDate: string, endDate: string) {

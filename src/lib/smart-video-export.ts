@@ -15,10 +15,11 @@ import {
   type InputVideoTrack,
 } from "mediabunny";
 
-import type { MatchDetail, MomentRecord } from "@/lib/domain";
+import type { MatchDetail, MatchRecord, MatchScoreEventRecord, MomentRecord } from "@/lib/domain";
 import {
   buildClipFileName,
   exportMomentClip as exportMomentClipLegacy,
+  sanitizeFileName,
   type ExportQuality,
 } from "@/lib/video-export";
 
@@ -39,6 +40,14 @@ type ExportMomentInput = {
   quality?: ExportQuality;
   onStatus?: (status: string) => void;
   sourceUrlFallback?: string;
+  includeAudio?: boolean;
+};
+
+type ExportFullMatchInput = {
+  match: MatchRecord & { scoreEvents: MatchScoreEventRecord[] };
+  quality?: ExportQuality;
+  includeAudio?: boolean;
+  onStatus?: (status: string) => void;
 };
 
 // Only remux when the saved mark is effectively on the keyframe. Otherwise an
@@ -92,12 +101,13 @@ export class SmartVideoExportSession {
     quality = "high",
     onStatus,
     sourceUrlFallback,
+    includeAudio = false,
   }: ExportMomentInput): Promise<SmartExportResult> {
     await this.validate();
 
     onStatus?.("Checking whether the clip can be copied without re-encoding...");
     try {
-      const direct = await this.tryDirectExport(match, moment, onStatus);
+      const direct = await this.tryDirectExport(match, moment, onStatus, includeAudio);
       if (direct) {
         return direct;
       }
@@ -107,12 +117,12 @@ export class SmartVideoExportSession {
 
     onStatus?.("Encoding an exact cut with WebCodecs...");
     try {
-      return await this.exportWithWebCodecs(match, moment, quality, onStatus);
+      return await this.exportWithWebCodecs(match, moment, quality, onStatus, "no-preference", includeAudio);
     } catch (error) {
       if (error instanceof WebCodecsStallError) {
         onStatus?.("The exact exporter stopped responding. Retrying with software encoding...");
         try {
-          return await this.exportWithWebCodecs(match, moment, quality, onStatus, "prefer-software");
+          return await this.exportWithWebCodecs(match, moment, quality, onStatus, "prefer-software", includeAudio);
         } catch (retryError) {
           console.info("The software WebCodecs retry was not possible. Trying compatibility mode.", retryError);
         }
@@ -130,8 +140,56 @@ export class SmartVideoExportSession {
       moment,
       quality,
       onStatus,
+      includeAudio,
     });
     return { ...legacy, mode: "compatibility" };
+  }
+
+  async exportFullMatch({ match, quality = "standard", includeAudio = false, onStatus }: ExportFullMatchInput): Promise<SmartExportResult> {
+    await this.validate();
+    if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") throw new Error("Full match export requires a recent version of Chrome or Edge.");
+    const conversionInput = this.createInput();
+    const logos = await Promise.all([loadOverlayImage(match.homeClubLogoDataUrl), loadOverlayImage(match.awayClubLogoDataUrl)]);
+    let canvas: HTMLCanvasElement | null = null;
+    let context: CanvasRenderingContext2D | null = null;
+    try {
+      const target = new BufferTarget();
+      const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
+      const settings = transcodeSettings[quality];
+      const conversion = await Conversion.init({
+        input: conversionInput,
+        output,
+        tracks: "primary",
+        video: {
+          codec: "avc",
+          bitrate: settings.videoBitrate,
+          keyFrameInterval: 2,
+          hardwareAcceleration: "no-preference",
+          forceTranscode: true,
+          process: (sample) => {
+            if (!canvas) {
+              canvas = document.createElement("canvas");
+              canvas.width = sample.displayWidth;
+              canvas.height = sample.displayHeight;
+              context = canvas.getContext("2d");
+            }
+            if (!canvas || !context) throw new Error("Could not prepare the scoreboard overlay.");
+            sample.draw(context, 0, 0, canvas.width, canvas.height);
+            drawBroadcastOverlay(context, canvas.width, canvas.height, match, sample.timestamp, logos);
+            return canvas;
+          },
+        },
+        audio: includeAudio ? { codec: "aac", bitrate: settings.audioBitrate } : { discard: true },
+        showWarnings: false,
+      });
+      if (!conversion.isValid) throw new Error("This video cannot be exported with the scoreboard in this browser.");
+      await executeLongConversion(conversion, (progress) => onStatus?.(`Exporting full match: ${Math.min(100, Math.round(progress * 100))}%`));
+      if (!target.buffer?.byteLength) throw new Error("The full match export finished without video data.");
+      return { blob: new Blob([target.buffer], { type: "video/mp4" }), fileName: `${sanitizeFileName(match.title) || "match"}-scoreboard.mp4`, mimeType: "video/mp4", mode: "webcodecs" };
+    } finally {
+      conversionInput.dispose();
+      logos.forEach((logo) => { if (logo && "close" in logo && typeof logo.close === "function") logo.close(); });
+    }
   }
 
   dispose() {
@@ -152,11 +210,12 @@ export class SmartVideoExportSession {
     match: MatchForExport,
     moment: MomentRecord,
     onStatus?: (status: string) => void,
+    includeAudio = false,
   ): Promise<SmartExportResult | null> {
     const videoTrack = await this.getVideoTrack();
     if (!videoTrack) return null;
 
-    const audioTrack = await this.getAudioTrack();
+    const audioTrack = includeAudio ? await this.getAudioTrack() : null;
     const format = new Mp4OutputFormat({ fastStart: "in-memory" });
     const videoCodec = await videoTrack.getCodec();
     const audioCodec = await audioTrack?.getCodec();
@@ -256,6 +315,7 @@ export class SmartVideoExportSession {
     quality: ExportQuality,
     onStatus?: (status: string) => void,
     hardwareAcceleration: HardwareAcceleration = "no-preference",
+    includeAudio = false,
   ): Promise<SmartExportResult> {
     if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") {
       throw new Error("WebCodecs is not available in this browser.");
@@ -281,10 +341,7 @@ export class SmartVideoExportSession {
           keyFrameInterval: 2,
           hardwareAcceleration,
         },
-        audio: {
-          codec: "aac",
-          bitrate: settings.audioBitrate,
-        },
+        audio: includeAudio ? { codec: "aac", bitrate: settings.audioBitrate } : { discard: true },
         showWarnings: false,
       });
 
@@ -433,4 +490,63 @@ async function copyAudioPackets({ sink, source, start, end, metadata }: AudioPac
 function normalizeExportError(error: unknown) {
   if (error instanceof Error) return error;
   return new Error("Could not export the video with the new engine.");
+}
+
+async function executeLongConversion(conversion: Conversion, onProgress: (progress: number) => void) {
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  let rejectStall: ((error: Error) => void) | null = null;
+  const stalled = new Promise<never>((_, reject) => { rejectStall = reject; });
+  const arm = () => { if (timeout) clearTimeout(timeout); timeout = setTimeout(() => rejectStall?.(new WebCodecsStallError()), WEBCODECS_STALL_TIMEOUT_MS); };
+  conversion.onProgress = (progress) => { arm(); onProgress(progress); };
+  arm();
+  const execution = conversion.execute();
+  try { await Promise.race([execution, stalled]); }
+  catch (error) { await conversion.cancel().catch(() => undefined); void execution.catch(() => undefined); throw error; }
+  finally { if (timeout) clearTimeout(timeout); }
+}
+
+async function loadOverlayImage(dataUrl: string | null) {
+  if (!dataUrl) return null;
+  try { return await createImageBitmap(await (await fetch(dataUrl)).blob()); }
+  catch { return null; }
+}
+
+function scoreForOverlay(events: MatchScoreEventRecord[], time: number) {
+  let homeScore = 0; let awayScore = 0;
+  for (const event of [...events].sort((a, b) => a.timeSeconds - b.timeSeconds || a.createdAt.localeCompare(b.createdAt))) {
+    if (event.timeSeconds > time + .05) break;
+    homeScore = event.homeScore; awayScore = event.awayScore;
+  }
+  return { homeScore, awayScore };
+}
+
+function clockForOverlay(match: MatchRecord, time: number) {
+  const firstStart = match.firstHalfStartSeconds;
+  if (firstStart === null || time < firstStart) return 0;
+  if (match.secondHalfStartSeconds !== null && time >= match.secondHalfStartSeconds) {
+    const effective = match.secondHalfEndSeconds !== null ? Math.min(time, match.secondHalfEndSeconds) : time;
+    return 45 * 60 + Math.max(0, effective - match.secondHalfStartSeconds);
+  }
+  if (match.firstHalfEndSeconds !== null && time >= match.firstHalfEndSeconds) return 45 * 60;
+  return Math.max(0, time - firstStart);
+}
+
+function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchRecord & { scoreEvents: MatchScoreEventRecord[] }, time: number, logos: (ImageBitmap | null)[]) {
+  const scale = Math.max(.6, width / 1920);
+  const panelWidth = Math.round(430 * scale); const rowHeight = Math.round(58 * scale); const clockHeight = Math.round(30 * scale); const margin = Math.round(28 * scale);
+  const x = width - panelWidth - margin; const y = margin; const score = scoreForOverlay(match.scoreEvents, time);
+  context.save(); context.fillStyle = "rgba(2, 6, 23, .91)"; context.fillRect(x, y, panelWidth, rowHeight * 2 + clockHeight);
+  context.fillStyle = "#67e8f9"; context.fillRect(x, y, panelWidth, clockHeight);
+  const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#082f49"; context.font = `700 ${Math.round(20 * scale)}px ui-monospace, monospace`; context.textAlign = "right"; context.textBaseline = "middle"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + panelWidth - Math.round(16 * scale), y + clockHeight / 2);
+  const teams = [match.homeClubShortName || match.homeClubName || match.teamName || "HOME", match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY"];
+  const scores = [score.homeScore, score.awayScore];
+  for (let index = 0; index < 2; index += 1) {
+    const rowY = y + clockHeight + index * rowHeight; const logoSize = Math.round(38 * scale); const logoX = x + Math.round(12 * scale); const logoY = rowY + (rowHeight - logoSize) / 2;
+    context.fillStyle = "rgba(255,255,255,.08)"; context.fillRect(logoX, logoY, logoSize, logoSize);
+    if (logos[index]) context.drawImage(logos[index]!, logoX, logoY, logoSize, logoSize);
+    else { context.fillStyle = "#cbd5e1"; context.font = `800 ${Math.round(13 * scale)}px system-ui, sans-serif`; context.textAlign = "center"; context.fillText(teams[index].slice(0, 2).toUpperCase(), logoX + logoSize / 2, logoY + logoSize / 2); }
+    context.fillStyle = "#f8fafc"; context.font = `700 ${Math.round(22 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index].slice(0, 18), logoX + logoSize + Math.round(12 * scale), rowY + rowHeight / 2);
+    context.font = `900 ${Math.round(30 * scale)}px system-ui, sans-serif`; context.textAlign = "right"; context.fillText(String(scores[index]), x + panelWidth - Math.round(18 * scale), rowY + rowHeight / 2);
+  }
+  context.restore();
 }

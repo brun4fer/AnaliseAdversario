@@ -21,6 +21,12 @@ export type MatchRecord = {
   firstHalfEndSeconds: number | null;
   secondHalfStartSeconds: number | null;
   secondHalfEndSeconds: number | null;
+  homeClubName: string | null;
+  homeClubShortName: string | null;
+  homeClubLogoDataUrl: string | null;
+  awayClubName: string | null;
+  awayClubShortName: string | null;
+  awayClubLogoDataUrl: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -123,6 +129,17 @@ export type ShortcutSettingRecord = {
 
 export type MatchDetail = MatchSummary & {
   moments: MomentRecord[];
+  scoreEvents: MatchScoreEventRecord[];
+};
+
+export type MatchScoreEventRecord = {
+  id: Id;
+  matchId: Id;
+  timeSeconds: number;
+  homeScore: number;
+  awayScore: number;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type CreateMatchInput = {
@@ -145,7 +162,7 @@ export type CreateMatchInput = {
   analysisPerspective?: MatchAnalysisPerspective;
 };
 
-export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
+export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; logoDataUrl?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
 
 export type UpdateMatchInput = Partial<CreateMatchInput>;
 

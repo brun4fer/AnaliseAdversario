@@ -5,6 +5,7 @@ import { Check, Cloud, Copy, Link2, Loader2 } from "lucide-react";
 
 import { Button, FieldLabel, Panel, TextInput } from "@/components/ui";
 import { apiFetch } from "@/lib/http";
+import { useLanguage } from "@/components/language-provider";
 
 type LinkStatus = { linked: boolean; linkedApps: string[] };
 type LinkToken = { token: string; expiresAt: string };
@@ -16,6 +17,7 @@ const appLabels: Record<string, string> = {
 };
 
 export function MediaLibraryLinkPanel() {
+  const { locale } = useLanguage();
   const [status, setStatus] = useState<LinkStatus | null>(null);
   const [token, setToken] = useState("");
   const [generated, setGenerated] = useState<LinkToken | null>(null);
@@ -86,7 +88,7 @@ export function MediaLibraryLinkPanel() {
           <div className="rounded-lg border border-white/10 bg-white/[.025] p-3">
             <p className="text-sm font-semibold text-white">Connect another application</p>
             <p className="mt-1 text-xs leading-5 text-slate-500">Use this side in the application whose video library should be kept as the destination.</p>
-            {generated ? <div className="mt-3"><div className="flex gap-2"><TextInput readOnly value={generated.token} className="font-mono text-xs" /><Button onClick={() => void copyCode()}><Copy size={14} />Copy</Button></div><p className="mt-2 text-[11px] text-slate-500">Valid until {new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(generated.expiresAt))}.</p></div> : <Button className="mt-3" disabled={working} onClick={() => void createCode()}>{working ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}Create linking code</Button>}
+            {generated ? <div className="mt-3"><div className="flex gap-2"><TextInput readOnly value={generated.token} className="font-mono text-xs" /><Button onClick={() => void copyCode()}><Copy size={14} />Copy</Button></div><p className="mt-2 text-[11px] text-slate-500">Valid until {new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", { hour: "2-digit", minute: "2-digit" }).format(new Date(generated.expiresAt))}.</p></div> : <Button className="mt-3" disabled={working} onClick={() => void createCode()}>{working ? <Loader2 size={14} className="animate-spin" /> : <Link2 size={14} />}Create linking code</Button>}
           </div>
         </div>
         {message ? <p className="text-xs text-cyan-100">{message}</p> : null}

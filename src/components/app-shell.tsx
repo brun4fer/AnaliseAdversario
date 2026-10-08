@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeft, BarChart3, FileBarChart, Goal, LockKeyhole, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
 import { ManagementAccessDialog } from "@/components/management-access-dialog";
+import { LanguageSwitcher, useLanguage } from "@/components/language-provider";
 import { PwaInstallButton } from "@/components/pwa-install-button";
 import { accessAreaForPath, type AccessArea } from "@/lib/access-areas";
 import { apiFetch } from "@/lib/http";
@@ -23,6 +24,7 @@ type Account = { accessControl: { globalUnlocked: boolean; unlockedAreas: Access
 function unlocked(account: Account, area: AccessArea | null) { return !area || account.accessControl.globalUnlocked || account.accessControl.unlockedAreas.includes(area); }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { t } = useLanguage();
   const pathname = usePathname();
   const router = useRouter();
   const [account, setAccount] = useState<Account | null>(null);
@@ -35,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     apiFetch<Account>("/api/account").then((next) => { setAccount(next); if (!unlocked(next, currentArea)) setPendingArea(currentArea); }).catch(() => undefined);
   }, [currentArea, isPublic]);
   const pageAlreadyHasBackButton = pathname === "/matches/new" || /^\/matches\/[^/]+\/edit$/.test(pathname) || pathname.startsWith("/analysis/");
-  if (isPublic) return <main className="min-h-screen">{children}</main>;
+  if (isPublic) return <main className="min-h-screen"><div className="fixed right-4 top-4 z-50"><LanguageSwitcher/></div>{children}</main>;
 
   async function logout() { await fetch("/api/auth/logout", { method: "POST" }); window.location.href = "/login"; }
 
@@ -57,6 +59,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
           <div className="flex items-center gap-2">
             <PwaInstallButton />
+            <LanguageSwitcher />
             <nav className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
@@ -72,7 +75,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     )}
                   >
                     <Icon size={16} />
-                    <span className="hidden sm:inline">{item.label}</span>
+                    <span className="hidden sm:inline">{t(item.label)}</span>
                     {account && !unlocked(account, item.area) ? <LockKeyhole size={10} className="text-amber-300"/> : null}
                   </Link>
                 );
@@ -90,7 +93,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             onClick={() => window.history.length > 1 ? router.back() : router.push("/")}
           >
             <ArrowLeft size={14} />
-            Back
+            {t("Back")}
           </button>
         ) : null}
         {children}
