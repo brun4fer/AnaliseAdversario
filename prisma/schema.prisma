@@ -133,6 +133,8 @@ model MatchScoreEvent {
   timeSeconds      Float
   homeScore        Int
   awayScore        Int
+  homeRedCards     Int      @default(0)
+  awayRedCards     Int      @default(0)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 

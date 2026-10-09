@@ -8,7 +8,7 @@ export async function POST(request: Request, context: Context) {
   try {
     await requireAreaUser("analysis");
     const { matchId } = await context.params;
-    const body = await readJson<{ timeSeconds: number; homeScore: number; awayScore: number }>(request);
+    const body = await readJson<{ timeSeconds: number; homeScore: number; awayScore: number; homeRedCards?: number; awayRedCards?: number }>(request);
     return ok(await createMatchScoreEvent(matchId, body));
   } catch (error) {
     return handleRouteError(error);

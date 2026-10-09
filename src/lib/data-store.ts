@@ -261,6 +261,8 @@ function mapScoreEvent(event: MatchScoreEvent): MatchScoreEventRecord {
     timeSeconds: event.timeSeconds,
     homeScore: event.homeScore,
     awayScore: event.awayScore,
+    homeRedCards: event.homeRedCards ?? 0,
+    awayRedCards: event.awayRedCards ?? 0,
     createdAt: event.createdAt.toISOString(),
     updatedAt: event.updatedAt.toISOString(),
   };
@@ -860,24 +862,26 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
 
 export async function createMatchScoreEvent(
   matchId: string,
-  input: { timeSeconds: number; homeScore: number; awayScore: number },
+  input: { timeSeconds: number; homeScore: number; awayScore: number; homeRedCards?: number; awayRedCards?: number },
 ): Promise<MatchScoreEventRecord> {
   const timeSeconds = Math.max(0, Math.round(Number(input.timeSeconds) * 10) / 10);
   const homeScore = Math.max(0, Math.floor(Number(input.homeScore)));
   const awayScore = Math.max(0, Math.floor(Number(input.awayScore)));
-  if (![timeSeconds, homeScore, awayScore].every(Number.isFinite)) throw new Error("Invalid score or video time.");
+  const homeRedCards = Math.max(0, Math.floor(Number(input.homeRedCards ?? 0)));
+  const awayRedCards = Math.max(0, Math.floor(Number(input.awayRedCards ?? 0)));
+  if (![timeSeconds, homeScore, awayScore, homeRedCards, awayRedCards].every(Number.isFinite)) throw new Error("Invalid score, red cards or video time.");
 
   if (shouldUseDatabase()) {
     const ownerId = await requireCurrentUserId();
     const match = await prisma.match.findFirst({ where: { id: matchId, ownerId }, select: { id: true } });
     if (!match) throw new Error("Match not found.");
-    return mapScoreEvent(await prisma.matchScoreEvent.create({ data: { matchId, timeSeconds, homeScore, awayScore } }));
+    return mapScoreEvent(await prisma.matchScoreEvent.create({ data: { matchId, timeSeconds, homeScore, awayScore, homeRedCards, awayRedCards } }));
   }
 
   const store = getMemoryStore();
   if (!store.matches.some((match) => match.id === matchId)) throw new Error("Match not found.");
   const createdAt = now();
-  const event: MatchScoreEventRecord = { id: id(), matchId, timeSeconds, homeScore, awayScore, createdAt, updatedAt: createdAt };
+  const event: MatchScoreEventRecord = { id: id(), matchId, timeSeconds, homeScore, awayScore, homeRedCards, awayRedCards, createdAt, updatedAt: createdAt };
   store.scoreEvents.push(event);
   return event;
 }

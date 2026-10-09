@@ -11,7 +11,7 @@ import { useVideoKeyboardSeek, VideoFullscreenButton } from "@/components/video-
 import { useSoundPreference, VideoAudioToggle } from "@/components/video-audio-toggle";
 import type { MatchAnalysisRecord, MatchDetail, MatchSummary, MomentRecord, SettingsPayload, UpdateMomentInput } from "@/lib/domain";
 import { canonicalOutcome, displayMoment, shortcutSourceTypeId } from "@/lib/analysis-perspective";
-import { type ExportDirectory, isExportPickerCancellation, pickExportDirectory, writeBlobToDirectory } from "@/lib/export-directory";
+import { type ExportDirectory, isExportPickerCancellation, pickExportDirectory, pickExportVideoFile, writeBlobToDirectory } from "@/lib/export-directory";
 import { apiFetch } from "@/lib/http";
 import { getRememberedMatchVideo, rememberMatchVideo } from "@/lib/local-video-store";
 import { getRemoteVideoDownloadUrl, getRemoteVideoUrl } from "@/lib/remote-video-store";
@@ -34,6 +34,7 @@ export function ReportsClient() {
   const advancingRef = useRef(false);
   const sessionFilesRef = useRef(new Map<string, File>());
   const pendingExportDirectoryRef = useRef<ExportDirectory | null>(null);
+  const exportRequestActiveRef = useRef(false);
   const [matches, setMatches] = useState<MatchSummary[]>([]);
   const [details, setDetails] = useState<MatchDetail[]>([]);
   const [settings, setSettings] = useState<SettingsPayload | null>(null);
@@ -50,6 +51,7 @@ export function ReportsClient() {
   const [exporting, setExporting] = useState(false);
   const [exportStatus, setExportStatus] = useState("");
   const [exportQuality, setExportQuality] = useState<ExportQuality>("high");
+  const [includeScoreboard, setIncludeScoreboard] = useState(true);
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [missingVideos, setMissingVideos] = useState<MatchDetail[]>([]);
   const [checkingVideos, setCheckingVideos] = useState(false);
@@ -231,14 +233,16 @@ export function ReportsClient() {
     setExporting(true); setExportStatus(`Preparing ${match.title}…`); setNotice(null);
     let exportVideo: Awaited<ReturnType<typeof getReportExportSource>> = null;
     let session: SmartVideoExportSession | null = null;
+    let writable: FileSystemWritableFileStream | null = null;
     try {
+      writable = await pickExportVideoFile(`${safeName(match.title)}${includeScoreboard ? "-scoreboard" : ""}.mp4`);
       exportVideo = await getReportExportSource(match);
       if (!exportVideo) throw new Error("This full match video is not available.");
       session = new SmartVideoExportSession(exportVideo.source);
-      const exported = await session.exportFullMatch({ match, quality: exportQuality, includeAudio: soundEnabled, onStatus: setExportStatus });
-      downloadBlob(exported.blob, exported.fileName);
-      setNotice(`Full match exported with scoreboard${soundEnabled ? " and sound" : " without sound"}.`);
-    } catch (error) { setNotice(error instanceof Error ? error.message : "The full match video could not be exported."); }
+      const exported = await session.exportFullMatch({ match, quality: exportQuality, includeAudio: soundEnabled, includeScoreboard, onStatus: setExportStatus, writable });
+      if (exported.blob) downloadBlob(exported.blob, exported.fileName);
+      setNotice(`Full match exported ${includeScoreboard ? "with scoreboard" : "without scoreboard"}${soundEnabled ? " and sound" : " and without sound"}.`);
+    } catch (error) { await writable?.abort().catch(() => undefined); if (!isExportPickerCancellation(error)) setNotice(error instanceof Error ? error.message : "The full match video could not be exported."); }
     finally { session?.dispose(); exportVideo?.release(); setExporting(false); setExportStatus(""); }
   }
 
@@ -271,19 +275,27 @@ export function ReportsClient() {
       startPlayback();
       return;
     }
+    if (exportRequestActiveRef.current) return;
+    exportRequestActiveRef.current = true;
+    setCheckingVideos(true);
+    setExportStatus("Choose the destination folder...");
     let exportDirectory: ExportDirectory | null = null;
     try {
       exportDirectory = await pickExportDirectory();
       pendingExportDirectoryRef.current = exportDirectory;
+      setExportStatus("Checking source videos...");
       setNotice(exportDirectory
         ? `Destination selected: ${exportDirectory.name}. Checking the source video...`
         : "Checking the source video before preparing the ZIP...");
     } catch (error) {
+      exportRequestActiveRef.current = false;
+      setCheckingVideos(false);
+      setExportStatus("");
       if (isExportPickerCancellation(error)) return;
       setNotice(error instanceof Error ? error.message : "Could not open the destination folder.");
       return;
     }
-    setCheckingVideos(true); setVideoPreparationError(null);
+    setVideoPreparationError(null);
     try {
       const requiredMatches = [...new Map(operationClips.map((clip) => [clip.match.id, clip.match])).values()];
       const availability = await Promise.all(requiredMatches.map(async (match) => ({
@@ -302,7 +314,9 @@ export function ReportsClient() {
       pendingExportDirectoryRef.current = null;
       setNotice(error instanceof Error ? error.message : "Could not prepare the videos for export.");
     } finally {
+      exportRequestActiveRef.current = false;
       setCheckingVideos(false);
+      setExportStatus("");
     }
   }
 
@@ -368,6 +382,7 @@ export function ReportsClient() {
               moment: clip.moment,
               quality: exportQuality,
               includeAudio: soundEnabled,
+              includeScoreboard,
               onStatus: (status) => setExportStatus(`${completed} of ${exportClips.length}: ${status}`),
             });
             const submomentFolders = subMomentTypeId
@@ -410,7 +425,11 @@ export function ReportsClient() {
         const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
         downloadBlob(blob, `Report-${selectedAnalyses.length}-analyses-${completed}-clips.zip`);
       }
-      setNotice(missing.size ? `Export complete. Missing videos: ${[...missing].join(", ")}.` : `${completed} clips exported successfully.`);
+      setNotice(missing.size
+        ? `Export complete. Missing videos: ${[...missing].join(", ")}.`
+        : directory
+          ? `${completed} clips exported successfully to ${directory.name}/${reportRoot}.`
+          : `${completed} clips exported successfully.`);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not export the report."); }
     finally { pendingExportDirectoryRef.current = null; setExporting(false); setExportStatus(""); }
   }
@@ -419,13 +438,13 @@ export function ReportsClient() {
   return <div className="space-y-5">
     <header><p className="text-xs uppercase tracking-[.24em] text-cyan-200/80">Aggregated analysis</p><h1 className="mt-2 text-3xl font-semibold text-white">Match reports</h1><p className="mt-2 text-sm text-slate-400">Select matches, find clips, then play or export the results.</p></header>
     {notice && <div className="flex items-start justify-between gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><span>{notice}</span><button onClick={() => setNotice(null)}><X size={16} /></button></div>}
-    {exporting && <div className="flex items-center gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><Loader2 className="shrink-0 animate-spin" size={17} /><span>{exportStatus || "Exporting clips..."}</span></div>}
+    {(exporting || checkingVideos) && <div className="flex items-center gap-3 rounded-md border border-cyan-300/25 bg-cyan-300/10 p-3 text-sm text-cyan-100"><Loader2 className="shrink-0 animate-spin" size={17} /><span>{exportStatus || (checkingVideos ? "Preparing export..." : "Exporting clips...")}</span></div>}
     <div className="grid gap-5 xl:grid-cols-[23rem_minmax(0,1fr)]">
       <Panel className="overflow-hidden"><div className="space-y-3 border-b border-white/10 p-4"><FieldLabel>Filter by analysed team</FieldLabel><Select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}><option value="">All analysed teams</option>{teamNames.map((team) => <option key={team}>{team}</option>)}</Select><div className="grid grid-cols-2 gap-2"><label className="grid gap-1.5"><FieldLabel htmlFor="report-start-date">Start date</FieldLabel><TextInput id="report-start-date" type="date" value={startDate} max={endDate || undefined} onChange={(event) => { setStartDate(event.target.value); stopPlayback(); }} /></label><label className="grid gap-1.5"><FieldLabel htmlFor="report-end-date">End date</FieldLabel><TextInput id="report-end-date" type="date" value={endDate} min={startDate || undefined} onChange={(event) => { setEndDate(event.target.value); stopPlayback(); }} /></label></div><div className="flex flex-wrap gap-2"><Button size="sm" onClick={() => setSelectedIds([...new Set([...selectedIds, ...visibleMatches.map(({ analysis }) => analysis.id)])])}><CheckSquare size={14} />Select visible</Button><Button size="sm" variant="ghost" onClick={() => setSelectedIds([])}>Clear selection</Button><Button size="sm" variant="ghost" disabled={!startDate && !endDate} onClick={() => { setStartDate(""); setEndDate(""); stopPlayback(); }}>Clear dates</Button></div></div><div className="max-h-[42rem] overflow-y-auto">{visibleMatches.length === 0 ? <p className="p-4 text-sm text-slate-500">No matches in the selected date range.</p> : visibleMatches.map(({ match, analysis }) => { const checked = selectedIds.includes(analysis.id); return <button key={analysis.id} onClick={() => toggleMatch(analysis.id)} className={`flex w-full items-start gap-3 border-b border-white/[.06] p-3 text-left hover:bg-white/[.06] ${checked ? "bg-cyan-300/10" : ""}`}>{checked ? <CheckSquare className="mt-0.5 shrink-0 text-cyan-200" size={17} /> : <Square className="mt-0.5 shrink-0 text-slate-600" size={17} />}<span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-white">{match.title}</span><span className="mt-1 block truncate text-xs font-medium text-cyan-100">Analysing: {analysis.analysedTeamName}</span><span className="mt-1 block text-xs text-slate-500">{formatReportDate(match.matchDate, locale)} · {match.teamName} vs {match.opponentName} · {match.momentCount} moments</span></span></button>; })}</div></Panel>
       <div className="space-y-4">
-        <Panel className="grid gap-4 p-4 md:grid-cols-3"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label></Panel>
-        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedAnalyses.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
-        {sortedVideoMatches.length ? <Panel className="overflow-hidden"><div className="border-b border-white/10 px-4 py-3"><FieldLabel>Full match videos</FieldLabel><p className="mt-1 text-xs text-slate-500">Matches ordered by date. Export burns the scoreboard into the video; copy link sends the original full match.</p></div><div className="hidden grid-cols-[minmax(0,1fr)_9rem_14rem] gap-3 border-b border-white/[.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500 sm:grid"><span>Match</span><span>Date</span><span className="text-right">Video</span></div><div className="divide-y divide-white/[.06]">{sortedVideoMatches.map((match) => <div key={match.id} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_14rem] sm:gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-white" title={match.title}>{match.title}</p><p className="mt-0.5 text-xs text-slate-500 sm:hidden">{formatReportDate(match.matchDate, locale)}</p></div><p className="hidden text-xs text-slate-400 sm:block">{formatReportDate(match.matchDate, locale)}</p><div className="grid grid-cols-2 gap-1"><Button size="sm" className="w-full justify-center" disabled={!match.video || exporting} onClick={() => void downloadFullMatch(match)}>{exporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14}/>} {match.video ? "Export" : "Unavailable"}</Button><Button size="sm" variant="secondary" className="w-full justify-center" disabled={match.video?.storageStatus !== "READY" || creatingLinkId === match.id} onClick={() => void copyFullMatchLink(match)}>{creatingLinkId === match.id ? <Loader2 size={14} className="animate-spin"/> : <Link2 size={14}/>}Copy link</Button></div></div>)}</div></Panel> : null}
+        <Panel className="grid gap-4 p-4 md:grid-cols-4"><label className="grid gap-2"><FieldLabel>Moment</FieldLabel><Select value={momentTypeId} onChange={(event) => changeMomentFilter(event.target.value)}><option value="">All moments</option>{settings?.momentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Submoment</FieldLabel><Select value={subMomentTypeId} disabled={!momentTypeId} onChange={(event) => { setSubMomentTypeId(event.target.value); stopPlayback(); }}><option value="">All submoments</option>{availableSubmomentTypes.map((type) => <option key={type.id} value={type.id}>{type.name}</option>)}</Select></label><label className="grid gap-2"><FieldLabel>Export quality</FieldLabel><Select value={exportQuality} onChange={(event) => setExportQuality(event.target.value as ExportQuality)}>{exportQualityOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</Select><span className="text-xs text-slate-500">{exportQualityOptions.find((option) => option.value === exportQuality)?.detail}</span></label><div className="grid content-start gap-2"><FieldLabel>Export options</FieldLabel><label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200"><input type="checkbox" checked={includeScoreboard} onChange={(event) => setIncludeScoreboard(event.target.checked)} className="h-4 w-4 accent-cyan-300"/>Scoreboard</label><label className="flex cursor-pointer items-center gap-2 text-sm text-slate-200"><input type="checkbox" checked={soundEnabled} onChange={(event) => setSoundEnabled(event.target.checked)} className="h-4 w-4 accent-cyan-300"/>Sound</label><span className="text-xs text-slate-500">Applied to full matches and report clips.</span></div></Panel>
+        <Panel className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="font-medium text-white">{loadingDetails ? "Loading clips…" : `${clips.length} clips found`}</p><p className="text-xs text-slate-500">{selectedExportClips.length} clips selected for export · {selectedAnalyses.length} analyses selected</p></div><div className="flex flex-wrap gap-2"><Button size="sm" variant="secondary" disabled={clips.length === 0} onClick={() => setSelectedClipIds(clipIds)}><CheckSquare size={14} />Select all clips</Button><Button size="sm" variant="ghost" disabled={selectedExportClips.length === 0} onClick={() => setSelectedClipIds([])}>Clear clips</Button><Button variant="primary" disabled={clips.length === 0 || loadingDetails || checkingVideos} onClick={() => void requestOperation("play")}>{checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <ListVideo size={16} />}Play all</Button><Button disabled={selectedExportClips.length === 0 || exporting || checkingVideos} onClick={() => void requestOperation("export")}>{exporting || checkingVideos ? <Loader2 className="animate-spin" size={16} /> : <Archive size={16} />}{checkingVideos ? "Preparing export..." : exporting ? exportStatus || "Exporting…" : `Export clips (${selectedExportClips.length})`}</Button></div></Panel>
+        {sortedVideoMatches.length ? <Panel className="overflow-hidden"><div className="border-b border-white/10 px-4 py-3"><FieldLabel>Full match videos</FieldLabel><p className="mt-1 text-xs text-slate-500">Matches ordered by date. Export uses the selected scoreboard and sound options; copy link sends the original full match.</p></div><div className="hidden grid-cols-[minmax(0,1fr)_9rem_14rem] gap-3 border-b border-white/[.06] px-4 py-2 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500 sm:grid"><span>Match</span><span>Date</span><span className="text-right">Video</span></div><div className="divide-y divide-white/[.06]">{sortedVideoMatches.map((match) => <div key={match.id} className="grid items-center gap-2 px-4 py-3 sm:grid-cols-[minmax(0,1fr)_9rem_14rem] sm:gap-3"><div className="min-w-0"><p className="truncate text-sm font-medium text-white" title={match.title}>{match.title}</p><p className="mt-0.5 text-xs text-slate-500 sm:hidden">{formatReportDate(match.matchDate, locale)}</p></div><p className="hidden text-xs text-slate-400 sm:block">{formatReportDate(match.matchDate, locale)}</p><div className="grid grid-cols-2 gap-1"><Button size="sm" className="w-full justify-center" disabled={!match.video || exporting} onClick={() => void downloadFullMatch(match)}>{exporting ? <Loader2 size={14} className="animate-spin"/> : <Download size={14}/>} {match.video ? "Export" : "Unavailable"}</Button><Button size="sm" variant="secondary" className="w-full justify-center" disabled={match.video?.storageStatus !== "READY" || creatingLinkId === match.id} onClick={() => void copyFullMatchLink(match)}>{creatingLinkId === match.id ? <Loader2 size={14} className="animate-spin"/> : <Link2 size={14}/>}Copy link</Button></div></div>)}</div></Panel> : null}
         {playing && clips[playing.index] ? <div ref={workspaceRef} data-video-workspace data-report-workspace className="grid items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_19rem]">
           <Panel className="report-video-panel self-start overflow-hidden">
             <div className="report-video-frame relative aspect-video bg-black"><video key={`${playing.url}-${clips[playing.index].analysis.id}-${clips[playing.index].moment.id}`} ref={videoRef} src={playing.url} crossOrigin="anonymous" className="h-full w-full object-contain" muted={!soundEnabled} playsInline onLoadedMetadata={handleLoadedMetadata} onTimeUpdate={handleTimeUpdate} onPlay={() => setIsPlaying(true)} onPause={() => setIsPlaying(false)} /><BroadcastScoreboard match={clips[playing.index].match} currentTime={currentTime}/></div>

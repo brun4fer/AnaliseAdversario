@@ -138,6 +138,8 @@ export type MatchScoreEventRecord = {
   timeSeconds: number;
   homeScore: number;
   awayScore: number;
+  homeRedCards: number;
+  awayRedCards: number;
   createdAt: string;
   updatedAt: string;
 };

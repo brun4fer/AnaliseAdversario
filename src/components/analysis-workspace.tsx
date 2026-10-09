@@ -28,7 +28,7 @@ import {
 
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
-import { BroadcastScoreboard } from "@/components/broadcast-scoreboard";
+import { BroadcastScoreboard, type BroadcastState } from "@/components/broadcast-scoreboard";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
@@ -673,7 +673,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
     setNotice(`Match period time saved at ${formatPreciseTime(seconds)}.`);
   }
 
-  async function saveScore(score: { homeScore: number; awayScore: number }) {
+  async function saveScore(score: BroadcastState) {
     if (!match || savingScore) return;
     setSavingScore(true);
     try {
@@ -683,7 +683,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       });
       setMatch((current) => current ? { ...current, scoreEvents: [...current.scoreEvents, event] } : current);
     } catch (scoreError) {
-      setNotice(scoreError instanceof Error ? scoreError.message : "Could not save the score.");
+      setNotice(scoreError instanceof Error ? scoreError.message : "Could not save the scoreboard change.");
     } finally {
       setSavingScore(false);
     }
@@ -697,7 +697,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       await apiFetch(`/api/matches/${match.id}/score-events?eventId=${encodeURIComponent(latest.id)}`, { method: "DELETE" });
       setMatch((current) => current ? { ...current, scoreEvents: current.scoreEvents.filter((event) => event.id !== latest.id) } : current);
     } catch (scoreError) {
-      setNotice(scoreError instanceof Error ? scoreError.message : "Could not undo the score change.");
+      setNotice(scoreError instanceof Error ? scoreError.message : "Could not undo the scoreboard change.");
     } finally {
       setSavingScore(false);
     }
