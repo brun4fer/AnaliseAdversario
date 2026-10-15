@@ -571,7 +571,9 @@ function clockForOverlay(match: MatchForExport, time: number) {
 }
 
 function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchForExport & { scoreEvents: MatchScoreEventRecord[] }, time: number, logos: (ImageBitmap | null)[]) {
-  const scale = Math.max(.6, width / 1920);
+  // Keep the exported television graphic compact so it does not cover
+  // important play near the top-right corner of the pitch.
+  const scale = Math.max(.5, (width / 1920) * .82);
   const panelWidth = Math.round(430 * scale); const rowHeight = Math.round(58 * scale); const clockHeight = Math.round(30 * scale); const margin = Math.round(28 * scale);
   const x = width - panelWidth - margin; const y = margin; const score = scoreForOverlay(match.scoreEvents, time);
   context.save(); context.fillStyle = "rgba(2, 6, 23, .91)"; context.fillRect(x, y, panelWidth, rowHeight * 2 + clockHeight);
