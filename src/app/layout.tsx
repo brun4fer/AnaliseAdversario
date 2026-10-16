@@ -8,7 +8,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: APP_NAME,
-  description: "PWA for tactical football analysis with local video.",
+  description: "Coding and analysing opponent football matches with tactical video.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

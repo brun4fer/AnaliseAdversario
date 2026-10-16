@@ -212,7 +212,6 @@ Object.assign(portuguese, {
   "Open analysis": "Abrir análise",
   "Open cloud library": "Abrir biblioteca cloud",
   "Open the other application and paste the code under “Link this application”.": "Abra a outra aplicação e cole o código em «Ligar esta aplicação».",
-  "Opponent analysis": "Análise do adversário",
   "Opponent context, observations or analysis goals": "Contexto do adversário, observações ou objetivos da análise",
   "Optional time": "Tempo opcional",
   "Organization, transitions, set pieces and results are shown in the reversed perspective.": "A organização, transições, bolas paradas e resultados são apresentados na perspetiva invertida.",
@@ -557,7 +556,7 @@ Object.assign(portuguese, {
   "go to": "ir para",
   "clubs": "clubes",
   "Saving submoment copy": "A guardar cópia do submomento",
-  "AP - Opponent Video Analysis": "AP - Análise de Vídeo do Adversário",
+  "Coding and Analysing": "Coding and Analysing",
   "PWA for tactical football analysis with local video.": "PWA para análise tática de futebol com vídeo local.",
 });
 

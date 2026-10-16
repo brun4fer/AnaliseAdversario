@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "AP - Opponent Video Analysis",
-  "short_name": "AP Video",
-  "description": "PWA for tactical football analysis with local video.",
+  "name": "Coding and Analysing",
+  "short_name": "Coding Analysis",
+  "description": "Coding and analysing opponent football matches with tactical video.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

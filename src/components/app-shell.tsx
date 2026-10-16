@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowLeft, BarChart3, FileBarChart, Goal, LockKeyhole, LogOut, Settings, Trophy, Wrench } from "lucide-react";
+import { ArrowLeft, BarChart3, FileBarChart, LockKeyhole, LogOut, Settings, Trophy, Wrench } from "lucide-react";
 
+import { CodingAnalysisMark } from "@/components/coding-analysis-mark";
 import { ManagementAccessDialog } from "@/components/management-access-dialog";
 import { LanguageSwitcher, useLanguage } from "@/components/language-provider";
 import { PwaInstallButton } from "@/components/pwa-install-button";
@@ -47,13 +48,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex max-w-[1800px] items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link href="/" className="flex min-w-0 items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-cyan-300/30 bg-cyan-300/10 text-cyan-200 shadow-glow">
-              <Goal size={22} strokeWidth={2.2} />
+              <CodingAnalysisMark size={24} />
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold text-cyan-100">
                 {APP_NAME}
               </span>
-              <span className="block truncate text-xs text-slate-400">Tactics, local video and moments</span>
+              <span className="block truncate text-xs text-slate-400">Coding, video and tactical moments</span>
             </span>
           </Link>
 

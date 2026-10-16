@@ -1,6 +1,6 @@
 import type { MomentTypeRecord, SubMomentTypeRecord } from "@/lib/domain";
 
-export const APP_NAME = "AP - Opponent Video Analysis";
+export const APP_NAME = "Coding and Analysing";
 
 export const subMomentShortcutKeys = ["Q", "W", "E", "R", "T", "Y", "U", "I"];
 

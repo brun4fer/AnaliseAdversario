@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Goal, UserPlus } from "lucide-react";
+import { UserPlus } from "lucide-react";
 import { useState } from "react";
 
+import { CodingAnalysisMark } from "@/components/coding-analysis-mark";
 import { Button, FieldLabel, Panel, TextInput } from "@/components/ui";
+import { APP_NAME } from "@/lib/taxonomy";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -47,9 +49,9 @@ export default function RegisterPage() {
     <div className="flex min-h-screen items-center justify-center px-4 py-8">
       <Panel className="w-full max-w-md p-7">
         <div className="mb-7 flex items-center gap-3">
-          <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-300/10 text-cyan-200"><Goal /></span>
+          <span className="flex h-11 w-11 items-center justify-center rounded-lg bg-cyan-300/10 text-cyan-200"><CodingAnalysisMark size={26} /></span>
           <div>
-            <p className="text-xs uppercase tracking-[.22em] text-cyan-200/70">Opponent analysis</p>
+            <p className="text-xs uppercase tracking-[.16em] text-cyan-200/70">{APP_NAME}</p>
             <h1 className="text-2xl font-semibold text-white">Create account</h1>
           </div>
         </div>
