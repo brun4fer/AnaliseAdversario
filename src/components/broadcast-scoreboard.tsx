@@ -68,19 +68,19 @@ export function BroadcastScoreboard({ match, currentTime, editable = false, savi
     <div className={`overflow-hidden rounded border border-white/20 bg-slate-950/92 text-white shadow-2xl backdrop-blur-sm ${editable ? "min-w-[13.75rem]" : "min-w-[8.25rem]"}`}>
       <div className="bg-cyan-300 px-2 py-px text-right font-mono text-[8px] font-bold tracking-wide text-slate-950">{clock}</div>
       {editable ? <div className="grid grid-cols-[minmax(4rem,1fr)_3.75rem_3.75rem] items-center gap-x-1 gap-y-1 px-1.5 py-1 text-[10px] font-semibold">
-        <TeamCell name={home} logo={match.homeClubLogoDataUrl} redCards={0}/><ScoreButtons score={score.homeScore} disabled={saving} onMinus={() => changeScore("home", -1)} onPlus={() => changeScore("home", 1)}/><RedCardButtons count={score.homeRedCards} disabled={saving} onMinus={() => changeRedCards("home", -1)} onPlus={() => changeRedCards("home", 1)}/>
-        <TeamCell name={away} logo={match.awayClubLogoDataUrl} redCards={0}/><ScoreButtons score={score.awayScore} disabled={saving} onMinus={() => changeScore("away", -1)} onPlus={() => changeScore("away", 1)}/><RedCardButtons count={score.awayRedCards} disabled={saving} onMinus={() => changeRedCards("away", -1)} onPlus={() => changeRedCards("away", 1)}/>
+        <TeamCell name={home} logo={match.homeClubLogoDataUrl} color={match.homeClubColor} redCards={0}/><ScoreButtons score={score.homeScore} disabled={saving} onMinus={() => changeScore("home", -1)} onPlus={() => changeScore("home", 1)}/><RedCardButtons count={score.homeRedCards} disabled={saving} onMinus={() => changeRedCards("home", -1)} onPlus={() => changeRedCards("home", 1)}/>
+        <TeamCell name={away} logo={match.awayClubLogoDataUrl} color={match.awayClubColor} redCards={0}/><ScoreButtons score={score.awayScore} disabled={saving} onMinus={() => changeScore("away", -1)} onPlus={() => changeScore("away", 1)}/><RedCardButtons count={score.awayRedCards} disabled={saving} onMinus={() => changeRedCards("away", -1)} onPlus={() => changeRedCards("away", 1)}/>
       </div> : <div className="grid grid-cols-[minmax(3.75rem,auto)_1.5rem] items-center gap-x-1 px-1.5 py-1 text-[10px] font-semibold">
-        <TeamCell name={home} logo={match.homeClubLogoDataUrl} redCards={score.homeRedCards}/><span className="text-center text-sm font-black">{score.homeScore}</span>
-        <TeamCell name={away} logo={match.awayClubLogoDataUrl} redCards={score.awayRedCards}/><span className="text-center text-sm font-black">{score.awayScore}</span>
+        <TeamCell name={home} logo={match.homeClubLogoDataUrl} color={match.homeClubColor} redCards={score.homeRedCards}/><span className="text-center text-sm font-black">{score.homeScore}</span>
+        <TeamCell name={away} logo={match.awayClubLogoDataUrl} color={match.awayClubColor} redCards={score.awayRedCards}/><span className="text-center text-sm font-black">{score.awayScore}</span>
       </div>}
     </div>
     {editable && (match.scoreEvents?.length || 0) > 0 ? <Button size="sm" variant="secondary" className="pointer-events-auto h-6 bg-slate-950/90 px-1.5 text-[9px]" disabled={saving} onClick={onUndo} title="Undo latest scoreboard change"><Undo2 size={10}/>Undo latest change</Button> : null}
   </div>;
 }
 
-function TeamCell({ name, logo, redCards }: { name: string; logo: string | null; redCards: number }) {
-  return <span className="flex min-w-0 items-center gap-1"><span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/10">{logo ? <img src={logo} alt="" className="h-full w-full object-contain"/> : <span className="text-[6px] font-bold text-slate-300">{name.slice(0, 2).toUpperCase()}</span>}</span><span className="max-w-20 truncate">{name}</span>{redCards > 0 ? <span className="ml-auto inline-flex items-center gap-0.5" title="Red cards"><span className="h-3 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-red-950"/><span className="text-[8px] font-bold text-red-200">{redCards}</span></span> : null}</span>;
+function TeamCell({ name, logo, color, redCards }: { name: string; logo: string | null; color: string | null; redCards: number }) {
+  return <span className="flex min-w-0 items-center gap-1"><span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/30 shadow-sm" style={{ backgroundColor: color || "#64748B" }}/><span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/10">{logo ? <img src={logo} alt="" className="h-full w-full object-contain"/> : <span className="text-[6px] font-bold text-slate-300">{name.slice(0, 2).toUpperCase()}</span>}</span><span className="max-w-20 truncate">{name}</span>{redCards > 0 ? <span className="ml-auto inline-flex items-center gap-0.5" title="Red cards"><span className="h-3 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-red-950"/><span className="text-[8px] font-bold text-red-200">{redCards}</span></span> : null}</span>;
 }
 
 function ScoreButtons({ score, disabled, onMinus, onPlus }: { score: number; disabled: boolean; onMinus: () => void; onPlus: () => void }) {

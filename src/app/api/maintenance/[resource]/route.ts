@@ -20,7 +20,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ res
   const { resource } = await params;
   if (!valid(resource)) return Response.json({ error: "Invalid resource." }, { status: 404 });
   const ownerId = await requireCurrentUserId();
-  const body = await request.json() as { name?: string; shortName?: string; logoDataUrl?: string | null; startDate?: string; endDate?: string; seasonId?: string; clubIds?: string[] };
+  const body = await request.json() as { name?: string; shortName?: string; logoDataUrl?: string | null; color?: string; startDate?: string; endDate?: string; seasonId?: string; clubIds?: string[] };
   const name = body.name?.trim();
   if (!name) return Response.json({ error: "Name is required." }, { status: 400 });
   try {
@@ -34,7 +34,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ res
     }
     const record = resource === "seasons"
       ? await prisma.season.create({ data: { name, ownerId, startDate: body.startDate ? new Date(body.startDate) : null, endDate: body.endDate ? new Date(body.endDate) : null } })
-      : resource === "clubs" ? await prisma.club.create({ data: { name, ownerId, shortName: body.shortName?.trim() || null, logoDataUrl: normalizeLogo(body.logoDataUrl) } })
+      : resource === "clubs" ? await prisma.club.create({ data: { name, ownerId, shortName: body.shortName?.trim() || null, logoDataUrl: normalizeLogo(body.logoDataUrl), color: normalizeColor(body.color) } })
       : await prisma.competition.create({ data: { name, ownerId, seasonId: body.seasonId || null, clubs: { connect: (body.clubIds || []).map((id) => ({ id })) } } });
     return Response.json(record, { status: 201 });
   } catch { return Response.json({ error: "A record with this name already exists." }, { status: 409 }); }
@@ -44,4 +44,10 @@ function normalizeLogo(value?: string | null) {
   if (!value) return null;
   if (value.length > 750_000 || !/^data:image\/(png|jpeg|webp);base64,/i.test(value)) throw new Error("Invalid club logo.");
   return value;
+}
+
+function normalizeColor(value?: string) {
+  const color = value?.trim().toUpperCase() || "#64748B";
+  if (!/^#[0-9A-F]{6}$/.test(color)) throw new Error("Invalid team color.");
+  return color;
 }

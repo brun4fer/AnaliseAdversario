@@ -7,8 +7,8 @@ import type { MaintenanceRecord } from "@/lib/domain";
 import { apiFetch } from "@/lib/http";
 
 type Resource = "seasons" | "clubs" | "competitions";
-type FormState = { name: string; shortName: string; logoDataUrl: string; startDate: string; endDate: string; seasonId: string; clubIds: string[] };
-const emptyForm: FormState = { name: "", shortName: "", logoDataUrl: "", startDate: "", endDate: "", seasonId: "", clubIds: [] };
+type FormState = { name: string; shortName: string; logoDataUrl: string; color: string; startDate: string; endDate: string; seasonId: string; clubIds: string[] };
+const emptyForm: FormState = { name: "", shortName: "", logoDataUrl: "", color: "#64748B", startDate: "", endDate: "", seasonId: "", clubIds: [] };
 const tabs: { key: Resource; label: string; singular: string }[] = [
   { key: "seasons", label: "Seasons", singular: "season" },
   { key: "clubs", label: "Clubs / teams", singular: "club" },
@@ -42,7 +42,7 @@ export function MaintenanceClient() {
 
   function edit(item: MaintenanceRecord) {
     setEditing(item);
-    setForm({ name: item.name, shortName: item.shortName || "", logoDataUrl: item.logoDataUrl || "", startDate: item.startDate?.slice(0, 10) || "", endDate: item.endDate?.slice(0, 10) || "", seasonId: item.seasonId || "", clubIds: item.clubIds || [] });
+    setForm({ name: item.name, shortName: item.shortName || "", logoDataUrl: item.logoDataUrl || "", color: item.color || "#64748B", startDate: item.startDate?.slice(0, 10) || "", endDate: item.endDate?.slice(0, 10) || "", seasonId: item.seasonId || "", clubIds: item.clubIds || [] });
   }
 
   async function submit(event: React.FormEvent) {
@@ -81,6 +81,7 @@ export function MaintenanceClient() {
           <label className="grid gap-2"><FieldLabel>Name</FieldLabel><TextInput value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} required /></label>
           {resource === "clubs" && <>
             <label className="grid gap-2"><FieldLabel>Short name</FieldLabel><TextInput value={form.shortName} onChange={(event) => setForm({ ...form, shortName: event.target.value })} /></label>
+            <div className="grid gap-2"><FieldLabel>Team color</FieldLabel><label className="flex h-10 cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-black/20 px-3 text-sm text-slate-200"><input type="color" value={form.color} onChange={(event) => setForm({ ...form, color: event.target.value.toUpperCase() })} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"/><span className="font-mono text-xs uppercase text-slate-400">{form.color}</span></label></div>
             <div className="grid gap-2"><FieldLabel>Club logo</FieldLabel><div className="flex items-center gap-3">
               {form.logoDataUrl ? <img src={form.logoDataUrl} alt="Club logo preview" className="h-16 w-16 rounded-lg border border-white/10 bg-white/[.04] object-contain p-1" /> : <div className="flex h-16 w-16 items-center justify-center rounded-lg border border-dashed border-white/15 text-slate-600"><ImagePlus size={22}/></div>}
               <div className="flex flex-wrap gap-2"><label className="inline-flex h-9 cursor-pointer items-center gap-2 rounded-md border border-white/10 bg-white/[.05] px-3 text-sm text-slate-200 hover:bg-white/[.09]"><ImagePlus size={15}/>Choose image<input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => void selectLogo(event.target.files?.[0])}/></label>{form.logoDataUrl ? <Button type="button" size="sm" variant="ghost" onClick={() => setForm({ ...form, logoDataUrl: "" })}><X size={14}/>Remove</Button> : null}</div>
@@ -97,7 +98,7 @@ export function MaintenanceClient() {
 }
 
 function ClubLogo({ item }: { item: MaintenanceRecord }) {
-  return item.logoDataUrl ? <img src={item.logoDataUrl} alt="" className="h-10 w-10 shrink-0 rounded-md bg-white/[.04] object-contain p-1"/> : <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-white/[.04] text-xs font-bold text-slate-500">{item.shortName?.slice(0, 2) || item.name.slice(0, 2)}</div>;
+  return <div className="flex shrink-0 items-center gap-2"><span className="h-3.5 w-3.5 rounded-full border border-white/25 shadow-sm" style={{ backgroundColor: item.color || "#64748B" }}/>{item.logoDataUrl ? <img src={item.logoDataUrl} alt="" className="h-10 w-10 rounded-md bg-white/[.04] object-contain p-1"/> : <div className="flex h-10 w-10 items-center justify-center rounded-md bg-white/[.04] text-xs font-bold text-slate-500">{item.shortName?.slice(0, 2) || item.name.slice(0, 2)}</div>}</div>;
 }
 
 async function resizeLogo(file: File) {

@@ -3,12 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { ArrowRight, Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2, Users, X } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Calendar, Clapperboard, Pencil, Play, Plus, Search, Trash2, Users, X } from "lucide-react";
 
 import { apiFetch } from "@/lib/http";
 import type { MatchAnalysisPerspective, MatchAnalysisRecord, MatchSummary } from "@/lib/domain";
 import { formatTime } from "@/lib/time";
-import { Badge, Button, Panel, TextInput } from "@/components/ui";
+import { Badge, Button, Panel, Select, TextInput } from "@/components/ui";
 import { useLanguage, type Locale } from "@/components/language-provider";
 
 export function DashboardClient() {
@@ -18,6 +18,7 @@ export function DashboardClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
+  const [sortBy, setSortBy] = useState<"matchDate" | "updatedAt">("updatedAt");
   const [openingMatch, setOpeningMatch] = useState<MatchSummary | null>(null);
   const [savingPerspective, setSavingPerspective] = useState<MatchAnalysisPerspective | null>(null);
 
@@ -28,14 +29,20 @@ export function DashboardClient() {
 
   const filteredMatches = useMemo(() => {
     const normalizedQuery = query.trim().toLocaleLowerCase();
-    if (!normalizedQuery) return analysisCards;
-
-    return analysisCards.filter(({ match, analysis }) =>
+    const filtered = normalizedQuery ? analysisCards.filter(({ match, analysis }) =>
       [match.title, match.teamName, match.opponentName, match.competition, analysis.analysedTeamName]
         .filter(Boolean)
         .some((value) => value!.toLocaleLowerCase().includes(normalizedQuery)),
-    );
-  }, [analysisCards, query]);
+    ) : analysisCards;
+
+    return [...filtered].sort((a, b) => {
+      const aPrimary = sortableDate(sortBy === "matchDate" ? a.match.matchDate : a.match.updatedAt);
+      const bPrimary = sortableDate(sortBy === "matchDate" ? b.match.matchDate : b.match.updatedAt);
+      return bPrimary - aPrimary
+        || sortableDate(b.match.updatedAt) - sortableDate(a.match.updatedAt)
+        || a.match.title.localeCompare(b.match.title);
+    });
+  }, [analysisCards, query, sortBy]);
 
   const totals = useMemo(
     () => ({
@@ -130,15 +137,18 @@ export function DashboardClient() {
       ) : null}
 
       {!loading && matches.length > 0 ? (
-        <div className="relative max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
-          <TextInput
-            aria-label="Search matches"
-            className="pl-10"
-            placeholder="Search by team, opponent or title"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-          />
+        <div className="flex max-w-3xl flex-col gap-3 sm:flex-row sm:items-end">
+          <div className="relative flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={17} />
+            <TextInput
+              aria-label="Search matches"
+              className="pl-10"
+              placeholder="Search by team, opponent or title"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+          <label className="grid min-w-64 gap-1.5"><span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[.16em] text-slate-500"><ArrowUpDown size={13}/>Order by</span><Select value={sortBy} onChange={(event) => setSortBy(event.target.value as "matchDate" | "updatedAt")}><option value="matchDate">Match date — newest first</option><option value="updatedAt">Last modified — newest first</option></Select></label>
         </div>
       ) : null}
 
@@ -272,4 +282,10 @@ function formatDate(value: string | null, locale: Locale) {
   }
 
   return new Intl.DateTimeFormat(locale === "pt" ? "pt-PT" : "en-GB", { dateStyle: "medium" }).format(new Date(value));
+}
+
+function sortableDate(value: string | null) {
+  if (!value) return Number.NEGATIVE_INFINITY;
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : Number.NEGATIVE_INFINITY;
 }

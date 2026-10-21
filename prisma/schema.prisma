@@ -60,6 +60,7 @@ model Club {
   name String
   shortName String?
   logoDataUrl String?
+  color String @default("#64748B")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   homeMatches Match[] @relation("HomeClub")

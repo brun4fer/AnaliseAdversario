@@ -24,9 +24,11 @@ export type MatchRecord = {
   homeClubName: string | null;
   homeClubShortName: string | null;
   homeClubLogoDataUrl: string | null;
+  homeClubColor: string | null;
   awayClubName: string | null;
   awayClubShortName: string | null;
   awayClubLogoDataUrl: string | null;
+  awayClubColor: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -164,7 +166,7 @@ export type CreateMatchInput = {
   analysisPerspective?: MatchAnalysisPerspective;
 };
 
-export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; logoDataUrl?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
+export type MaintenanceRecord = { id: Id; name: string; shortName?: string | null; logoDataUrl?: string | null; color?: string | null; startDate?: string | null; endDate?: string | null; seasonId?: string | null; clubIds?: string[]; createdAt: string; updatedAt: string };
 
 export type UpdateMatchInput = Partial<CreateMatchInput>;
 

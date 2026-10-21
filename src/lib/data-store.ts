@@ -61,8 +61,8 @@ type MemoryStore = {
 };
 
 type MatchWithClubs = Match & {
-  homeClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
-  awayClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
+  homeClub?: { name: string; shortName: string | null; logoDataUrl: string | null; color: string } | null;
+  awayClub?: { name: string; shortName: string | null; logoDataUrl: string | null; color: string } | null;
 };
 
 type PrismaMomentWithRelations = Prisma.MomentGetPayload<{
@@ -246,9 +246,11 @@ function mapMatch(match: MatchWithClubs): MatchRecord {
     homeClubName: match.homeClub?.name ?? null,
     homeClubShortName: match.homeClub?.shortName ?? null,
     homeClubLogoDataUrl: match.homeClub?.logoDataUrl ?? null,
+    homeClubColor: match.homeClub?.color ?? null,
     awayClubName: match.awayClub?.name ?? null,
     awayClubShortName: match.awayClub?.shortName ?? null,
     awayClubLogoDataUrl: match.awayClub?.logoDataUrl ?? null,
+    awayClubColor: match.awayClub?.color ?? null,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
@@ -569,8 +571,8 @@ export async function listMatches(): Promise<MatchSummary[]> {
     const matches = await prisma.match.findMany({
       where: { ownerId },
       include: {
-        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
-        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
         _count: { select: { moments: true } },
@@ -607,8 +609,8 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
     const match = await prisma.match.findUnique({
       where: { id: matchId, ownerId },
       include: {
-        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
-        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
         scoreEvents: { orderBy: [{ timeSeconds: "asc" }, { createdAt: "asc" }] },
@@ -740,9 +742,11 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     homeClubName: null,
     homeClubShortName: null,
     homeClubLogoDataUrl: null,
+    homeClubColor: null,
     awayClubName: null,
     awayClubShortName: null,
     awayClubLogoDataUrl: null,
+    awayClubColor: null,
     createdAt,
     updatedAt: createdAt,
   };

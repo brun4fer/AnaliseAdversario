@@ -28,8 +28,8 @@ import {
 type MatchForExport = Pick<MatchDetail,
   "title" | "teamName" | "opponentName" | "competition" |
   "firstHalfStartSeconds" | "firstHalfEndSeconds" | "secondHalfStartSeconds" | "secondHalfEndSeconds" |
-  "homeClubName" | "homeClubShortName" | "homeClubLogoDataUrl" |
-  "awayClubName" | "awayClubShortName" | "awayClubLogoDataUrl"
+  "homeClubName" | "homeClubShortName" | "homeClubLogoDataUrl" | "homeClubColor" |
+  "awayClubName" | "awayClubShortName" | "awayClubLogoDataUrl" | "awayClubColor"
 > & { scoreEvents?: MatchScoreEventRecord[] };
 
 export type SmartExportMode = "direct" | "webcodecs" | "compatibility";
@@ -580,10 +580,12 @@ function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, 
   context.fillStyle = "#67e8f9"; context.fillRect(x, y, panelWidth, clockHeight);
   const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#082f49"; context.font = `700 ${Math.round(20 * scale)}px ui-monospace, monospace`; context.textAlign = "right"; context.textBaseline = "middle"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + panelWidth - Math.round(16 * scale), y + clockHeight / 2);
   const teams = [match.homeClubShortName || match.homeClubName || match.teamName || "HOME", match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY"];
+  const colors = [match.homeClubColor || "#64748B", match.awayClubColor || "#64748B"];
   const scores = [score.homeScore, score.awayScore];
   const redCards = [score.homeRedCards, score.awayRedCards];
   for (let index = 0; index < 2; index += 1) {
-    const rowY = y + clockHeight + index * rowHeight; const logoSize = Math.round(38 * scale); const logoX = x + Math.round(12 * scale); const logoY = rowY + (rowHeight - logoSize) / 2;
+    const rowY = y + clockHeight + index * rowHeight; const colorSize = Math.round(12 * scale); const colorX = x + Math.round(10 * scale); const colorY = rowY + (rowHeight - colorSize) / 2; const logoSize = Math.round(38 * scale); const logoX = colorX + colorSize + Math.round(8 * scale); const logoY = rowY + (rowHeight - logoSize) / 2;
+    context.fillStyle = colors[index]; context.beginPath(); context.arc(colorX + colorSize / 2, colorY + colorSize / 2, colorSize / 2, 0, Math.PI * 2); context.fill(); context.strokeStyle = "rgba(255,255,255,.35)"; context.lineWidth = Math.max(1, Math.round(scale)); context.stroke();
     context.save(); context.beginPath(); context.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2); context.clip();
     context.fillStyle = "rgba(255,255,255,.08)"; context.fillRect(logoX, logoY, logoSize, logoSize);
     if (logos[index]) context.drawImage(logos[index]!, logoX, logoY, logoSize, logoSize);
