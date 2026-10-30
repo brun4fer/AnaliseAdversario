@@ -541,6 +541,7 @@ Object.assign(portuguese, {
   "Last modified — newest first": "Última modificação — mais recente primeiro",
   "Scoreboard": "Placar",
   "Goals": "Golos",
+  "Editing controls · not included in export": "Controlos de edição · não incluídos na exportação",
   "Sound": "Som",
   "Applied to full matches and report clips.": "Aplicado aos jogos completos e aos clips dos relatórios.",
   "Matches ordered by date. Export uses the selected scoreboard and sound options; copy link sends the original full match.": "Jogos ordenados por data. A exportação utiliza as opções selecionadas de placar e som; copiar a ligação envia o jogo completo original.",

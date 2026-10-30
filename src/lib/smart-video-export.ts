@@ -165,7 +165,6 @@ export class SmartVideoExportSession {
     await this.validate();
     if (typeof VideoEncoder === "undefined" || typeof VideoDecoder === "undefined") throw new Error("Full match export requires a recent version of Chrome or Edge.");
     const conversionInput = this.createInput();
-    const logos = includeScoreboard ? await Promise.all([loadOverlayImage(match.homeClubLogoDataUrl), loadOverlayImage(match.awayClubLogoDataUrl)]) : [null, null];
     let canvas: HTMLCanvasElement | null = null;
     let context: CanvasRenderingContext2D | null = null;
     try {
@@ -193,7 +192,7 @@ export class SmartVideoExportSession {
             }
             if (!canvas || !context) throw new Error("Could not prepare the scoreboard overlay.");
             sample.draw(context, 0, 0, canvas.width, canvas.height);
-            drawBroadcastOverlay(context, canvas.width, canvas.height, match, sample.timestamp, logos);
+            drawBroadcastOverlay(context, canvas.width, canvas.height, match, sample.timestamp);
             return canvas;
           } : undefined,
         },
@@ -210,7 +209,6 @@ export class SmartVideoExportSession {
       return { blob: null, fileName, mimeType: "video/mp4", mode: "webcodecs" };
     } finally {
       conversionInput.dispose();
-      logos.forEach((logo) => { if (logo && "close" in logo && typeof logo.close === "function") logo.close(); });
     }
   }
 
@@ -347,7 +345,6 @@ export class SmartVideoExportSession {
     // A fresh input isolates every exact cut. This prevents a stalled browser
     // decoder/encoder from poisoning the remaining clips in a large batch.
     const conversionInput = this.createInput();
-    const logos = includeScoreboard ? await Promise.all([loadOverlayImage(match.homeClubLogoDataUrl), loadOverlayImage(match.awayClubLogoDataUrl)]) : [null, null];
     let canvas: HTMLCanvasElement | null = null;
     let context: CanvasRenderingContext2D | null = null;
     try {
@@ -375,7 +372,7 @@ export class SmartVideoExportSession {
             }
             if (!canvas || !context) throw new Error("Could not prepare the scoreboard overlay.");
             sample.draw(context, 0, 0, canvas.width, canvas.height);
-            drawBroadcastOverlay(context, canvas.width, canvas.height, { ...match, scoreEvents: match.scoreEvents || [] }, sample.timestamp + start, logos);
+            drawBroadcastOverlay(context, canvas.width, canvas.height, { ...match, scoreEvents: match.scoreEvents || [] }, sample.timestamp + start);
             return canvas;
           } : undefined,
         },
@@ -404,7 +401,6 @@ export class SmartVideoExportSession {
       };
     } finally {
       conversionInput.dispose();
-      logos.forEach((logo) => { if (logo && "close" in logo && typeof logo.close === "function") logo.close(); });
     }
   }
 }
@@ -544,12 +540,6 @@ async function executeLongConversion(conversion: Conversion, onProgress: (progre
   finally { if (timeout) clearTimeout(timeout); }
 }
 
-async function loadOverlayImage(dataUrl: string | null) {
-  if (!dataUrl) return null;
-  try { return await createImageBitmap(await (await fetch(dataUrl)).blob()); }
-  catch { return null; }
-}
-
 function scoreForOverlay(events: MatchScoreEventRecord[], time: number) {
   let homeScore = 0; let awayScore = 0; let homeRedCards = 0; let awayRedCards = 0;
   for (const event of [...events].sort((a, b) => a.timeSeconds - b.timeSeconds || a.createdAt.localeCompare(b.createdAt))) {
@@ -566,34 +556,33 @@ function clockForOverlay(match: MatchForExport, time: number) {
     const effective = match.secondHalfEndSeconds !== null ? Math.min(time, match.secondHalfEndSeconds) : time;
     return 45 * 60 + Math.max(0, effective - match.secondHalfStartSeconds);
   }
-  if (match.firstHalfEndSeconds !== null && time >= match.firstHalfEndSeconds) return 45 * 60;
+  if (match.firstHalfEndSeconds !== null && time >= match.firstHalfEndSeconds) return Math.max(0, match.firstHalfEndSeconds - firstStart);
   return Math.max(0, time - firstStart);
 }
 
-function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchForExport & { scoreEvents: MatchScoreEventRecord[] }, time: number, logos: (ImageBitmap | null)[]) {
-  // Keep the exported television graphic compact so it does not cover
-  // important play near the top-right corner of the pitch.
+function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchForExport & { scoreEvents: MatchScoreEventRecord[] }, time: number) {
   const scale = Math.max(.42, (width / 1920) * .72);
-  const panelWidth = Math.round(380 * scale); const rowHeight = Math.round(52 * scale); const clockHeight = Math.round(26 * scale); const margin = Math.round(12 * scale);
-  const x = width - panelWidth - margin; const y = margin; const score = scoreForOverlay(match.scoreEvents, time);
-  context.save(); context.fillStyle = "rgba(2, 6, 23, .91)"; context.fillRect(x, y, panelWidth, rowHeight * 2 + clockHeight);
-  context.fillStyle = "#67e8f9"; context.fillRect(x, y, panelWidth, clockHeight);
-  const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#082f49"; context.font = `700 ${Math.round(20 * scale)}px ui-monospace, monospace`; context.textAlign = "right"; context.textBaseline = "middle"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + panelWidth - Math.round(16 * scale), y + clockHeight / 2);
-  const teams = [match.homeClubShortName || match.homeClubName || match.teamName || "HOME", match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY"];
-  const colors = [match.homeClubColor || "#64748B", match.awayClubColor || "#64748B"];
-  const scores = [score.homeScore, score.awayScore];
-  const redCards = [score.homeRedCards, score.awayRedCards];
+  const clockWidth = Math.round(90 * scale); const teamWidth = Math.round(112 * scale); const scoreWidth = Math.round(88 * scale); const panelHeight = Math.round(42 * scale); const margin = Math.round(12 * scale); const panelWidth = clockWidth + teamWidth * 2 + scoreWidth;
+  const x = width - panelWidth - margin; const y = margin; const score = scoreForOverlay(match.scoreEvents, time); const middleY = y + panelHeight / 2;
+  const teams = [scoreboardOverlayCode(match.homeClubShortName || match.homeClubName || match.teamName || "HOME"), scoreboardOverlayCode(match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY")];
+  const colors = [match.homeClubColor || "#64748B", match.awayClubColor || "#64748B"]; const redCards = [score.homeRedCards, score.awayRedCards];
+  context.save(); context.textBaseline = "middle";
+  context.fillStyle = "#9dcc68"; context.fillRect(x, y, clockWidth, panelHeight);
+  const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#102319"; context.font = `900 ${Math.round(18 * scale)}px ui-monospace, monospace`; context.textAlign = "center"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + clockWidth / 2, middleY);
   for (let index = 0; index < 2; index += 1) {
-    const rowY = y + clockHeight + index * rowHeight; const colorSize = Math.round(12 * scale); const colorX = x + Math.round(10 * scale); const colorY = rowY + (rowHeight - colorSize) / 2; const logoSize = Math.round(38 * scale); const logoX = colorX + colorSize + Math.round(8 * scale); const logoY = rowY + (rowHeight - logoSize) / 2;
-    context.fillStyle = colors[index]; context.beginPath(); context.arc(colorX + colorSize / 2, colorY + colorSize / 2, colorSize / 2, 0, Math.PI * 2); context.fill(); context.strokeStyle = "rgba(255,255,255,.35)"; context.lineWidth = Math.max(1, Math.round(scale)); context.stroke();
-    context.save(); context.beginPath(); context.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2); context.clip();
-    context.fillStyle = "rgba(255,255,255,.08)"; context.fillRect(logoX, logoY, logoSize, logoSize);
-    if (logos[index]) context.drawImage(logos[index]!, logoX, logoY, logoSize, logoSize);
-    else { context.fillStyle = "#cbd5e1"; context.font = `800 ${Math.round(13 * scale)}px system-ui, sans-serif`; context.textAlign = "center"; context.fillText(teams[index].slice(0, 2).toUpperCase(), logoX + logoSize / 2, logoY + logoSize / 2); }
-    context.restore(); context.strokeStyle = "rgba(255,255,255,.22)"; context.lineWidth = Math.max(1, Math.round(scale)); context.beginPath(); context.arc(logoX + logoSize / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2); context.stroke();
-    context.fillStyle = "#f8fafc"; context.font = `700 ${Math.round(22 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index].slice(0, 18), logoX + logoSize + Math.round(12 * scale), rowY + rowHeight / 2);
-    if (redCards[index] > 0) { const cardW = Math.round(10 * scale); const cardH = Math.round(18 * scale); const cardX = x + panelWidth - Math.round(82 * scale); const cardY = rowY + (rowHeight - cardH) / 2; context.fillStyle = "#ef4444"; context.fillRect(cardX, cardY, cardW, cardH); context.fillStyle = "#fecaca"; context.font = `700 ${Math.round(15 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(String(redCards[index]), cardX + cardW + Math.round(5 * scale), rowY + rowHeight / 2); }
-    context.font = `900 ${Math.round(30 * scale)}px system-ui, sans-serif`; context.textAlign = "right"; context.fillText(String(scores[index]), x + panelWidth - Math.round(18 * scale), rowY + rowHeight / 2);
+    const teamX = x + clockWidth + (index === 0 ? 0 : teamWidth + scoreWidth); const cardW = Math.max(2, Math.round(7 * scale)); const cardH = Math.max(4, Math.round(14 * scale)); const cardGap = Math.max(1, Math.round(3 * scale));
+    for (let cardIndex = 0; cardIndex < redCards[index]; cardIndex += 1) { context.fillStyle = "#ef4444"; context.fillRect(teamX + Math.round(12 * scale) + cardIndex * (cardW + cardGap), y - cardH / 2, cardW, cardH); }
+    context.fillStyle = index === 0 ? "#17221b" : "#202d24"; context.fillRect(teamX, y, teamWidth, panelHeight);
+    const dotSize = Math.round(11 * scale); const dotX = teamX + Math.round(12 * scale); context.fillStyle = colors[index]; context.beginPath(); context.arc(dotX + dotSize / 2, middleY, dotSize / 2, 0, Math.PI * 2); context.fill(); context.strokeStyle = "rgba(255,255,255,.45)"; context.lineWidth = Math.max(1, Math.round(scale)); context.stroke();
+    const teamTextX = dotX + dotSize + Math.round(8 * scale); context.fillStyle = "#f8faf5"; context.font = `800 ${Math.round(18 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index], teamTextX, middleY);
   }
-  context.restore();
+  const scoreX = x + clockWidth + teamWidth; context.fillStyle = "#f2f4e8"; context.fillRect(scoreX, y, scoreWidth, panelHeight); context.fillStyle = "#17221b"; context.font = `900 ${Math.round(22 * scale)}px system-ui, sans-serif`; context.textAlign = "center"; context.fillText(`${score.homeScore}  -  ${score.awayScore}`, scoreX + scoreWidth / 2, middleY);
+  context.strokeStyle = "rgba(0,0,0,.28)"; context.lineWidth = Math.max(1, Math.round(scale)); context.strokeRect(x, y, panelWidth, panelHeight); context.restore();
+}
+
+function scoreboardOverlayCode(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length <= 4) return normalized;
+  const initials = normalized.split(/\s+/).filter(Boolean).map((part) => part[0]).join("");
+  return (initials.length >= 2 ? initials : normalized).slice(0, 4);
 }

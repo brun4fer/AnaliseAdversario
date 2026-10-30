@@ -28,7 +28,7 @@ export function matchClockSeconds(match: MatchRecord, videoTimeSeconds: number) 
     const effective = secondEnd !== null ? Math.min(current, secondEnd) : current;
     return 45 * 60 + Math.max(0, effective - secondStart);
   }
-  if (firstEnd !== null && current >= firstEnd) return 45 * 60;
+  if (firstEnd !== null && current >= firstEnd) return Math.max(0, firstEnd - firstStart);
   return Math.max(0, current - firstStart);
 }
 
@@ -46,8 +46,8 @@ export function BroadcastScoreboard({ match, currentTime, editable = false, savi
   onUndo?: () => void;
 }) {
   const score = scoreAtTime(match.scoreEvents || [], currentTime);
-  const home = match.homeClubShortName || match.homeClubName || match.teamName || "HOME";
-  const away = match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY";
+  const home = scoreboardTeamCode(match.homeClubShortName || match.homeClubName || match.teamName || "HOME");
+  const away = scoreboardTeamCode(match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY");
   const clock = formatMatchClock(matchClockSeconds(match, currentTime));
   const changeScore = (team: "home" | "away", delta: number) => {
     onChange?.({
@@ -64,31 +64,44 @@ export function BroadcastScoreboard({ match, currentTime, editable = false, savi
     });
   };
 
-  return <div className="pointer-events-none absolute right-2 top-1 z-20 flex flex-col items-end gap-1 sm:right-3 sm:top-2">
-    <div className={`overflow-hidden rounded border border-white/20 bg-slate-950/92 text-white shadow-2xl backdrop-blur-sm ${editable ? "min-w-[13.75rem]" : "min-w-[8.25rem]"}`}>
-      <div className="bg-cyan-300 px-2 py-px text-right font-mono text-[8px] font-bold tracking-wide text-slate-950">{clock}</div>
-      {editable ? <div className="grid grid-cols-[minmax(4rem,1fr)_3.75rem_3.75rem] items-center gap-x-1 gap-y-1 px-1.5 py-1 text-[10px] font-semibold">
-        <TeamCell name={home} logo={match.homeClubLogoDataUrl} color={match.homeClubColor} redCards={0}/><ScoreButtons score={score.homeScore} disabled={saving} onMinus={() => changeScore("home", -1)} onPlus={() => changeScore("home", 1)}/><RedCardButtons count={score.homeRedCards} disabled={saving} onMinus={() => changeRedCards("home", -1)} onPlus={() => changeRedCards("home", 1)}/>
-        <TeamCell name={away} logo={match.awayClubLogoDataUrl} color={match.awayClubColor} redCards={0}/><ScoreButtons score={score.awayScore} disabled={saving} onMinus={() => changeScore("away", -1)} onPlus={() => changeScore("away", 1)}/><RedCardButtons count={score.awayRedCards} disabled={saving} onMinus={() => changeRedCards("away", -1)} onPlus={() => changeRedCards("away", 1)}/>
-      </div> : <div className="grid grid-cols-[minmax(3.75rem,auto)_1.5rem] items-center gap-x-1 px-1.5 py-1 text-[10px] font-semibold">
-        <TeamCell name={home} logo={match.homeClubLogoDataUrl} color={match.homeClubColor} redCards={score.homeRedCards}/><span className="text-center text-sm font-black">{score.homeScore}</span>
-        <TeamCell name={away} logo={match.awayClubLogoDataUrl} color={match.awayClubColor} redCards={score.awayRedCards}/><span className="text-center text-sm font-black">{score.awayScore}</span>
-      </div>}
+  return <div className="pointer-events-none absolute right-2 top-3 z-20 flex flex-col items-end gap-1 sm:right-3 sm:top-4">
+    <div className="flex h-7 rounded-sm border border-black/35 bg-[#17221b] text-white shadow-2xl backdrop-blur-sm">
+      <span className="flex w-12 shrink-0 items-center justify-center rounded-l-[2px] bg-[#9dcc68] font-mono text-[9px] font-black tracking-tight text-[#102319]">{clock}</span>
+      <ScoreboardTeam code={home} color={match.homeClubColor} redCards={score.homeRedCards}/>
+      <span className="flex h-full min-w-[3.75rem] items-center justify-center gap-1 bg-[#f2f4e8] px-2 text-[13px] font-black tabular-nums text-[#17221b]"><span>{score.homeScore}</span><span className="text-[10px] text-slate-500">-</span><span>{score.awayScore}</span></span>
+      <ScoreboardTeam code={away} color={match.awayClubColor} redCards={score.awayRedCards} last/>
     </div>
-    {editable && (match.scoreEvents?.length || 0) > 0 ? <Button size="sm" variant="secondary" className="pointer-events-auto h-6 bg-slate-950/90 px-1.5 text-[9px]" disabled={saving} onClick={onUndo} title="Undo latest scoreboard change"><Undo2 size={10}/>Undo latest change</Button> : null}
+    {editable ? <div className="pointer-events-auto w-[12.5rem] rounded border border-white/15 bg-slate-950/92 p-1.5 text-white shadow-2xl backdrop-blur-sm">
+      <p className="mb-1 text-center text-[7px] font-semibold uppercase tracking-[.12em] text-slate-500">Editing controls · not included in export</p>
+      <div className="grid grid-cols-[minmax(2.5rem,1fr)_3.25rem_3.25rem] gap-1 border-b border-white/10 pb-0.5 text-center text-[7px] font-semibold uppercase tracking-wide text-slate-500"><span/><span>Goals</span><span>Red cards</span></div>
+      <ScoreboardControlRow code={home} color={match.homeClubColor} score={score.homeScore} redCards={score.homeRedCards} disabled={saving} onScoreMinus={() => changeScore("home", -1)} onScorePlus={() => changeScore("home", 1)} onCardMinus={() => changeRedCards("home", -1)} onCardPlus={() => changeRedCards("home", 1)}/>
+      <ScoreboardControlRow code={away} color={match.awayClubColor} score={score.awayScore} redCards={score.awayRedCards} disabled={saving} onScoreMinus={() => changeScore("away", -1)} onScorePlus={() => changeScore("away", 1)} onCardMinus={() => changeRedCards("away", -1)} onCardPlus={() => changeRedCards("away", 1)}/>
+      {(match.scoreEvents?.length || 0) > 0 ? <Button size="sm" variant="ghost" className="mt-1 h-6 w-full justify-center px-1.5 text-[9px]" disabled={saving} onClick={onUndo} title="Undo latest scoreboard change"><Undo2 size={10}/>Undo latest change</Button> : null}
+    </div> : null}
   </div>;
 }
 
-function TeamCell({ name, logo, color, redCards }: { name: string; logo: string | null; color: string | null; redCards: number }) {
-  return <span className="flex min-w-0 items-center gap-1"><span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/30 shadow-sm" style={{ backgroundColor: color || "#64748B" }}/><span className="flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-white/10">{logo ? <img src={logo} alt="" className="h-full w-full object-contain"/> : <span className="text-[6px] font-bold text-slate-300">{name.slice(0, 2).toUpperCase()}</span>}</span><span className="max-w-20 truncate">{name}</span>{redCards > 0 ? <span className="ml-auto inline-flex items-center gap-0.5" title="Red cards"><span className="h-3 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-red-950"/><span className="text-[8px] font-bold text-red-200">{redCards}</span></span> : null}</span>;
+function ScoreboardTeam({ code, color, redCards, last = false }: { code: string; color: string | null; redCards: number; last?: boolean }) {
+  return <span className="relative isolate flex min-w-[3.25rem] items-center justify-center gap-1.5 px-1.5 text-[10px] font-extrabold tracking-wide">{redCards > 0 ? <span className="absolute -top-1.5 left-1.5 z-0 flex gap-0.5" title="Red cards">{Array.from({ length: redCards }, (_, index) => <span key={index} className="h-3 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-black"/>)}</span> : null}<span className={`absolute inset-0 z-10 ${last ? "rounded-r-[2px] bg-[#202d24]" : "bg-[#17221b]"}`}/><span className="relative z-20 h-2.5 w-2.5 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: color || "#64748B" }}/><span className="relative z-20 leading-none">{code}</span></span>;
+}
+
+function ScoreboardControlRow({ code, color, score, redCards, disabled, onScoreMinus, onScorePlus, onCardMinus, onCardPlus }: { code: string; color: string | null; score: number; redCards: number; disabled: boolean; onScoreMinus: () => void; onScorePlus: () => void; onCardMinus: () => void; onCardPlus: () => void }) {
+  return <div className="grid grid-cols-[minmax(2.5rem,1fr)_3.25rem_3.25rem] items-center gap-1 py-0.5"><span className="flex min-w-0 items-center gap-1.5 text-[9px] font-bold tracking-wide"><span className="h-2.5 w-2.5 shrink-0 rounded-full border border-white/30" style={{ backgroundColor: color || "#64748B" }}/><span className="truncate">{code}</span></span><ScoreButtons score={score} disabled={disabled} onMinus={onScoreMinus} onPlus={onScorePlus}/><RedCardButtons count={redCards} disabled={disabled} onMinus={onCardMinus} onPlus={onCardPlus}/></div>;
 }
 
 function ScoreButtons({ score, disabled, onMinus, onPlus }: { score: number; disabled: boolean; onMinus: () => void; onPlus: () => void }) {
-  const button = "flex h-6 w-5 items-center justify-center bg-white/[.06] text-slate-200 transition hover:bg-white/[.16] hover:text-white disabled:opacity-40";
-  return <span className="pointer-events-auto flex overflow-hidden rounded border border-white/20" title="Goals"><button type="button" disabled={disabled || score === 0} onClick={onMinus} className={button} aria-label="Decrease score"><Minus size={10}/></button><span className="flex h-6 min-w-5 items-center justify-center border-x border-white/15 text-xs font-black">{score}</span><button type="button" disabled={disabled} onClick={onPlus} className={button} aria-label="Increase score"><Plus size={10}/></button></span>;
+  const button = "flex h-5 w-[17px] items-center justify-center bg-white/[.06] text-slate-200 transition hover:bg-white/[.16] hover:text-white disabled:opacity-40";
+  return <span className="pointer-events-auto flex overflow-hidden rounded border border-white/20" title="Goals"><button type="button" disabled={disabled || score === 0} onClick={onMinus} className={button} aria-label="Decrease score"><Minus size={9}/></button><span className="flex h-5 min-w-[16px] items-center justify-center border-x border-white/15 text-[10px] font-black">{score}</span><button type="button" disabled={disabled} onClick={onPlus} className={button} aria-label="Increase score"><Plus size={9}/></button></span>;
 }
 
 function RedCardButtons({ count, disabled, onMinus, onPlus }: { count: number; disabled: boolean; onMinus: () => void; onPlus: () => void }) {
-  const button = "flex h-6 w-5 items-center justify-center bg-red-500/[.06] text-red-100 transition hover:bg-red-500/20 disabled:opacity-40";
-  return <span className="pointer-events-auto flex overflow-hidden rounded border border-red-400/35" title="Red cards"><button type="button" disabled={disabled || count === 0} onClick={onMinus} className={button} aria-label="Remove red card"><Minus size={10}/></button><span className="flex h-6 min-w-5 items-center justify-center gap-0.5 border-x border-red-400/25 text-[9px] font-bold"><span className="h-3 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-red-950"/>{count}</span><button type="button" disabled={disabled} onClick={onPlus} className={button} aria-label="Add red card"><Plus size={10}/></button></span>;
+  const button = "flex h-5 w-[17px] items-center justify-center bg-red-500/[.06] text-red-100 transition hover:bg-red-500/20 disabled:opacity-40";
+  return <span className="pointer-events-auto flex overflow-hidden rounded border border-red-400/35" title="Red cards"><button type="button" disabled={disabled || count === 0} onClick={onMinus} className={button} aria-label="Remove red card"><Minus size={9}/></button><span className="flex h-5 min-w-[16px] items-center justify-center gap-0.5 border-x border-red-400/25 text-[8px] font-bold"><span className="h-2.5 w-1.5 rounded-[1px] bg-red-500 shadow-sm shadow-red-950"/>{count}</span><button type="button" disabled={disabled} onClick={onPlus} className={button} aria-label="Add red card"><Plus size={9}/></button></span>;
+}
+
+function scoreboardTeamCode(value: string) {
+  const normalized = value.trim().toUpperCase();
+  if (normalized.length <= 4) return normalized;
+  const initials = normalized.split(/\s+/).filter(Boolean).map((part) => part[0]).join("");
+  return (initials.length >= 2 ? initials : normalized).slice(0, 4);
 }
