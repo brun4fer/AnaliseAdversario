@@ -60,7 +60,6 @@ model Club {
   name String
   shortName String?
   logoDataUrl String?
-  color String @default("#64748B")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   homeMatches Match[] @relation("HomeClub")
@@ -102,6 +101,8 @@ model Match {
   seasonId     String?
   homeClubId   String?
   awayClubId   String?
+  homeTeamColor String @default("#D91E36")
+  awayTeamColor String @default("#1D4ED8")
   competitionId String?
   firstHalfStartSeconds  Float?
   firstHalfEndSeconds    Float?

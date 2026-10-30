@@ -689,6 +689,21 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
     }
   }
 
+  async function saveTeamColor(team: "home" | "away", color: string) {
+    if (!match || savingScore) return;
+    setSavingScore(true);
+    try {
+      const field = team === "home" ? "homeTeamColor" : "awayTeamColor";
+      const saved = await apiFetch<MatchRecord>(`/api/matches/${match.id}`, { method: "PATCH", body: JSON.stringify({ [field]: color }) });
+      setMatch((current) => current ? { ...current, ...saved } : current);
+      setNotice("Match color saved.");
+    } catch (colorError) {
+      setNotice(colorError instanceof Error ? colorError.message : "Could not save the match color.");
+    } finally {
+      setSavingScore(false);
+    }
+  }
+
   async function undoScore() {
     if (!match || savingScore || match.scoreEvents.length === 0) return;
     const latest = [...match.scoreEvents].sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
@@ -1014,7 +1029,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   </div>
                 </div>
               )}
-              {player.sourceUrl ? <BroadcastScoreboard match={match} currentTime={player.currentTime} editable saving={savingScore} onChange={(score) => void saveScore(score)} onUndo={() => void undoScore()}/> : null}
+              {player.sourceUrl ? <BroadcastScoreboard match={match} currentTime={player.currentTime} editable saving={savingScore} onChange={(score) => void saveScore(score)} onUndo={() => void undoScore()} onTeamColorChange={(team, color) => void saveTeamColor(team, color)}/> : null}
             </div>
 
             <div className="shrink-0 border-t border-white/10 bg-pitch-950/90 p-2">

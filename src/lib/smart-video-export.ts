@@ -28,9 +28,11 @@ import {
 type MatchForExport = Pick<MatchDetail,
   "title" | "teamName" | "opponentName" | "competition" |
   "firstHalfStartSeconds" | "firstHalfEndSeconds" | "secondHalfStartSeconds" | "secondHalfEndSeconds" |
-  "homeClubName" | "homeClubShortName" | "homeClubLogoDataUrl" | "homeClubColor" |
-  "awayClubName" | "awayClubShortName" | "awayClubLogoDataUrl" | "awayClubColor"
+  "homeClubName" | "homeClubShortName" | "homeClubLogoDataUrl" | "homeTeamColor" |
+  "awayClubName" | "awayClubShortName" | "awayClubLogoDataUrl" | "awayTeamColor"
 > & { scoreEvents?: MatchScoreEventRecord[] };
+
+type ScoreboardLogos = [HTMLImageElement | null, HTMLImageElement | null];
 
 export type SmartExportMode = "direct" | "webcodecs" | "compatibility";
 
@@ -167,6 +169,7 @@ export class SmartVideoExportSession {
     const conversionInput = this.createInput();
     let canvas: HTMLCanvasElement | null = null;
     let context: CanvasRenderingContext2D | null = null;
+    const logos = includeScoreboard ? await loadScoreboardLogos(match) : null;
     try {
       const target = writable
         ? new StreamTarget(writable as unknown as WritableStream<StreamTargetChunk>, { chunked: true })
@@ -192,7 +195,7 @@ export class SmartVideoExportSession {
             }
             if (!canvas || !context) throw new Error("Could not prepare the scoreboard overlay.");
             sample.draw(context, 0, 0, canvas.width, canvas.height);
-            drawBroadcastOverlay(context, canvas.width, canvas.height, match, sample.timestamp);
+            drawBroadcastOverlay(context, canvas.width, canvas.height, match, sample.timestamp, logos);
             return canvas;
           } : undefined,
         },
@@ -347,6 +350,7 @@ export class SmartVideoExportSession {
     const conversionInput = this.createInput();
     let canvas: HTMLCanvasElement | null = null;
     let context: CanvasRenderingContext2D | null = null;
+    const logos = includeScoreboard ? await loadScoreboardLogos(match) : null;
     try {
       const target = new BufferTarget();
       const output = new Output({ format: new Mp4OutputFormat({ fastStart: "in-memory" }), target });
@@ -372,7 +376,7 @@ export class SmartVideoExportSession {
             }
             if (!canvas || !context) throw new Error("Could not prepare the scoreboard overlay.");
             sample.draw(context, 0, 0, canvas.width, canvas.height);
-            drawBroadcastOverlay(context, canvas.width, canvas.height, { ...match, scoreEvents: match.scoreEvents || [] }, sample.timestamp + start);
+            drawBroadcastOverlay(context, canvas.width, canvas.height, { ...match, scoreEvents: match.scoreEvents || [] }, sample.timestamp + start, logos);
             return canvas;
           } : undefined,
         },
@@ -560,24 +564,56 @@ function clockForOverlay(match: MatchForExport, time: number) {
   return Math.max(0, time - firstStart);
 }
 
-function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchForExport & { scoreEvents: MatchScoreEventRecord[] }, time: number) {
+function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, height: number, match: MatchForExport & { scoreEvents: MatchScoreEventRecord[] }, time: number, logos: ScoreboardLogos | null) {
   const scale = Math.max(.42, (width / 1920) * .72);
   const clockWidth = Math.round(90 * scale); const teamWidth = Math.round(112 * scale); const scoreWidth = Math.round(88 * scale); const panelHeight = Math.round(42 * scale); const margin = Math.round(12 * scale); const panelWidth = clockWidth + teamWidth * 2 + scoreWidth;
   const x = width - panelWidth - margin; const y = margin; const score = scoreForOverlay(match.scoreEvents, time); const middleY = y + panelHeight / 2;
   const teams = [scoreboardOverlayCode(match.homeClubShortName || match.homeClubName || match.teamName || "HOME"), scoreboardOverlayCode(match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY")];
-  const colors = [match.homeClubColor || "#64748B", match.awayClubColor || "#64748B"]; const redCards = [score.homeRedCards, score.awayRedCards];
+  const colors = [match.homeTeamColor, match.awayTeamColor]; const redCards = [score.homeRedCards, score.awayRedCards];
   context.save(); context.textBaseline = "middle";
-  context.fillStyle = "#9dcc68"; context.fillRect(x, y, clockWidth, panelHeight);
-  const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#102319"; context.font = `900 ${Math.round(18 * scale)}px ui-monospace, monospace`; context.textAlign = "center"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + clockWidth / 2, middleY);
+  context.fillStyle = "#ffffff"; context.fillRect(x, y, clockWidth, panelHeight);
+  const clock = Math.floor(clockForOverlay(match, time)); context.fillStyle = "#0f172a"; context.font = `900 ${Math.round(18 * scale)}px ui-monospace, monospace`; context.textAlign = "center"; context.fillText(`${String(Math.floor(clock / 60)).padStart(2, "0")}:${String(clock % 60).padStart(2, "0")}`, x + clockWidth / 2, middleY);
   for (let index = 0; index < 2; index += 1) {
     const teamX = x + clockWidth + (index === 0 ? 0 : teamWidth + scoreWidth); const cardW = Math.max(2, Math.round(7 * scale)); const cardH = Math.max(4, Math.round(14 * scale)); const cardGap = Math.max(1, Math.round(3 * scale));
     for (let cardIndex = 0; cardIndex < redCards[index]; cardIndex += 1) { context.fillStyle = "#ef4444"; context.fillRect(teamX + Math.round(12 * scale) + cardIndex * (cardW + cardGap), y - cardH / 2, cardW, cardH); }
-    context.fillStyle = index === 0 ? "#17221b" : "#202d24"; context.fillRect(teamX, y, teamWidth, panelHeight);
-    const dotSize = Math.round(11 * scale); const dotX = teamX + Math.round(12 * scale); context.fillStyle = colors[index]; context.beginPath(); context.arc(dotX + dotSize / 2, middleY, dotSize / 2, 0, Math.PI * 2); context.fill(); context.strokeStyle = "rgba(255,255,255,.45)"; context.lineWidth = Math.max(1, Math.round(scale)); context.stroke();
-    const teamTextX = dotX + dotSize + Math.round(8 * scale); context.fillStyle = "#f8faf5"; context.font = `800 ${Math.round(18 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index], teamTextX, middleY);
+    context.fillStyle = colors[index]; context.fillRect(teamX, y, teamWidth, panelHeight);
+    const emblemSize = Math.round(22 * scale); const emblemX = teamX + Math.round(10 * scale); drawTeamEmblem(context, logos?.[index] || null, teams[index], emblemX, middleY - emblemSize / 2, emblemSize);
+    const teamTextX = emblemX + emblemSize + Math.round(7 * scale); context.fillStyle = readableOverlayTextColor(colors[index]); context.font = `800 ${Math.round(18 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index], teamTextX, middleY);
   }
   const scoreX = x + clockWidth + teamWidth; context.fillStyle = "#f2f4e8"; context.fillRect(scoreX, y, scoreWidth, panelHeight); context.fillStyle = "#17221b"; context.font = `900 ${Math.round(22 * scale)}px system-ui, sans-serif`; context.textAlign = "center"; context.fillText(`${score.homeScore}  -  ${score.awayScore}`, scoreX + scoreWidth / 2, middleY);
   context.strokeStyle = "rgba(0,0,0,.28)"; context.lineWidth = Math.max(1, Math.round(scale)); context.strokeRect(x, y, panelWidth, panelHeight); context.restore();
+}
+
+async function loadScoreboardLogos(match: MatchForExport): Promise<ScoreboardLogos> {
+  return Promise.all([loadScoreboardLogo(match.homeClubLogoDataUrl), loadScoreboardLogo(match.awayClubLogoDataUrl)]) as Promise<ScoreboardLogos>;
+}
+
+function loadScoreboardLogo(source: string | null) {
+  if (!source) return Promise.resolve(null);
+  return new Promise<HTMLImageElement | null>((resolve) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => resolve(null);
+    image.src = source;
+  });
+}
+
+function drawTeamEmblem(context: CanvasRenderingContext2D, image: HTMLImageElement | null, fallback: string, x: number, y: number, size: number) {
+  const radius = size / 2;
+  context.save();
+  context.beginPath(); context.arc(x + radius, y + radius, radius, 0, Math.PI * 2); context.clip();
+  context.fillStyle = "#ffffff"; context.fillRect(x, y, size, size);
+  if (image) context.drawImage(image, x + 1, y + 1, size - 2, size - 2);
+  else { context.fillStyle = "#334155"; context.font = `900 ${Math.max(6, Math.round(size * .42))}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(fallback.slice(0, 1), x + radius, y + radius); }
+  context.restore();
+  context.strokeStyle = "rgba(0,0,0,.28)"; context.lineWidth = Math.max(1, Math.round(size / 14)); context.beginPath(); context.arc(x + radius, y + radius, radius, 0, Math.PI * 2); context.stroke();
+}
+
+function readableOverlayTextColor(color: string) {
+  const hex = color.replace("#", "");
+  if (!/^[0-9A-Fa-f]{6}$/.test(hex)) return "#ffffff";
+  const red = Number.parseInt(hex.slice(0, 2), 16); const green = Number.parseInt(hex.slice(2, 4), 16); const blue = Number.parseInt(hex.slice(4, 6), 16);
+  return red * .299 + green * .587 + blue * .114 > 160 ? "#111827" : "#ffffff";
 }
 
 function scoreboardOverlayCode(value: string) {

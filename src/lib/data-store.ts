@@ -61,8 +61,8 @@ type MemoryStore = {
 };
 
 type MatchWithClubs = Match & {
-  homeClub?: { name: string; shortName: string | null; logoDataUrl: string | null; color: string } | null;
-  awayClub?: { name: string; shortName: string | null; logoDataUrl: string | null; color: string } | null;
+  homeClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
+  awayClub?: { name: string; shortName: string | null; logoDataUrl: string | null } | null;
 };
 
 type PrismaMomentWithRelations = Prisma.MomentGetPayload<{
@@ -238,6 +238,8 @@ function mapMatch(match: MatchWithClubs): MatchRecord {
     seasonId: match.seasonId,
     homeClubId: match.homeClubId,
     awayClubId: match.awayClubId,
+    homeTeamColor: match.homeTeamColor,
+    awayTeamColor: match.awayTeamColor,
     competitionId: match.competitionId,
     firstHalfStartSeconds: match.firstHalfStartSeconds,
     firstHalfEndSeconds: match.firstHalfEndSeconds,
@@ -246,11 +248,9 @@ function mapMatch(match: MatchWithClubs): MatchRecord {
     homeClubName: match.homeClub?.name ?? null,
     homeClubShortName: match.homeClub?.shortName ?? null,
     homeClubLogoDataUrl: match.homeClub?.logoDataUrl ?? null,
-    homeClubColor: match.homeClub?.color ?? null,
     awayClubName: match.awayClub?.name ?? null,
     awayClubShortName: match.awayClub?.shortName ?? null,
     awayClubLogoDataUrl: match.awayClub?.logoDataUrl ?? null,
-    awayClubColor: match.awayClub?.color ?? null,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
@@ -395,6 +395,12 @@ function normalizeDateInput(date?: string | null) {
 function normalizeOptionalText(value?: string | null) {
   const trimmed = value?.trim();
   return trimmed ? trimmed : null;
+}
+
+function normalizeMatchColor(value: string | undefined, fallback: string) {
+  const normalized = value?.trim().toUpperCase() || fallback;
+  if (!/^#[0-9A-F]{6}$/.test(normalized)) throw new Error("Invalid match team color.");
+  return normalized;
 }
 
 function momentDuration(start: number, end: number) {
@@ -571,8 +577,8 @@ export async function listMatches(): Promise<MatchSummary[]> {
     const matches = await prisma.match.findMany({
       where: { ownerId },
       include: {
-        homeClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
-        awayClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
         _count: { select: { moments: true } },
@@ -609,8 +615,8 @@ export async function getMatchDetail(matchId: string): Promise<MatchDetail | nul
     const match = await prisma.match.findUnique({
       where: { id: matchId, ownerId },
       include: {
-        homeClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
-        awayClub: { select: { name: true, shortName: true, logoDataUrl: true, color: true } },
+        homeClub: { select: { name: true, shortName: true, logoDataUrl: true } },
+        awayClub: { select: { name: true, shortName: true, logoDataUrl: true } },
         videos: { orderBy: { updatedAt: "desc" }, take: 1 },
         analyses: { orderBy: { createdAt: "asc" } },
         scoreEvents: { orderBy: [{ timeSeconds: "asc" }, { createdAt: "asc" }] },
@@ -707,6 +713,8 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
         seasonId: normalizeOptionalText(input.seasonId),
         homeClubId: normalizeOptionalText(input.homeClubId),
         awayClubId: normalizeOptionalText(input.awayClubId),
+        homeTeamColor: normalizeMatchColor(input.homeTeamColor, "#D91E36"),
+        awayTeamColor: normalizeMatchColor(input.awayTeamColor, "#1D4ED8"),
         competitionId: normalizeOptionalText(input.competitionId),
         analyses: {
           create: [
@@ -734,6 +742,8 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     seasonId: normalizeOptionalText(input.seasonId),
     homeClubId: normalizeOptionalText(input.homeClubId),
     awayClubId: normalizeOptionalText(input.awayClubId),
+    homeTeamColor: normalizeMatchColor(input.homeTeamColor, "#D91E36"),
+    awayTeamColor: normalizeMatchColor(input.awayTeamColor, "#1D4ED8"),
     competitionId: normalizeOptionalText(input.competitionId),
     firstHalfStartSeconds: input.firstHalfStartSeconds ?? null,
     firstHalfEndSeconds: input.firstHalfEndSeconds ?? null,
@@ -742,11 +752,9 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     homeClubName: null,
     homeClubShortName: null,
     homeClubLogoDataUrl: null,
-    homeClubColor: null,
     awayClubName: null,
     awayClubShortName: null,
     awayClubLogoDataUrl: null,
-    awayClubColor: null,
     createdAt,
     updatedAt: createdAt,
   };
@@ -813,6 +821,8 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
         ...(input.seasonId !== undefined ? { seasonId: normalizeOptionalText(input.seasonId) } : {}),
         ...(input.homeClubId !== undefined ? { homeClubId: normalizeOptionalText(input.homeClubId) } : {}),
         ...(input.awayClubId !== undefined ? { awayClubId: normalizeOptionalText(input.awayClubId) } : {}),
+        ...(input.homeTeamColor !== undefined ? { homeTeamColor: normalizeMatchColor(input.homeTeamColor, currentMatch.homeTeamColor) } : {}),
+        ...(input.awayTeamColor !== undefined ? { awayTeamColor: normalizeMatchColor(input.awayTeamColor, currentMatch.awayTeamColor) } : {}),
         ...(input.competitionId !== undefined ? { competitionId: normalizeOptionalText(input.competitionId) } : {}),
         ...(input.firstHalfStartSeconds !== undefined ? { firstHalfStartSeconds: input.firstHalfStartSeconds } : {}),
         ...(input.firstHalfEndSeconds !== undefined ? { firstHalfEndSeconds: input.firstHalfEndSeconds } : {}),
@@ -854,6 +864,8 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   if (input.seasonId !== undefined) match.seasonId = normalizeOptionalText(input.seasonId);
   if (input.homeClubId !== undefined) match.homeClubId = normalizeOptionalText(input.homeClubId);
   if (input.awayClubId !== undefined) match.awayClubId = normalizeOptionalText(input.awayClubId);
+  if (input.homeTeamColor !== undefined) match.homeTeamColor = normalizeMatchColor(input.homeTeamColor, match.homeTeamColor);
+  if (input.awayTeamColor !== undefined) match.awayTeamColor = normalizeMatchColor(input.awayTeamColor, match.awayTeamColor);
   if (input.competitionId !== undefined) match.competitionId = normalizeOptionalText(input.competitionId);
   if (input.firstHalfStartSeconds !== undefined) match.firstHalfStartSeconds = input.firstHalfStartSeconds;
   if (input.firstHalfEndSeconds !== undefined) match.firstHalfEndSeconds = input.firstHalfEndSeconds;

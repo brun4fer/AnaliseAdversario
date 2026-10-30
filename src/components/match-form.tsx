@@ -26,6 +26,8 @@ const emptyForm: CreateMatchInput = {
   seasonId: "",
   homeClubId: "",
   awayClubId: "",
+  homeTeamColor: "#D91E36",
+  awayTeamColor: "#1D4ED8",
   competitionId: "",
 };
 
@@ -61,6 +63,8 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
           seasonId: match.seasonId ?? "",
           homeClubId: match.homeClubId ?? "",
           awayClubId: match.awayClubId ?? "",
+          homeTeamColor: match.homeTeamColor,
+          awayTeamColor: match.awayTeamColor,
           competitionId: match.competitionId ?? "",
         }),
       )
@@ -127,6 +131,8 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
               <Choice label="Competition" value={form.competitionId ?? ""} items={competitions.filter(item=>item.seasonId===form.seasonId)} required disabled={!form.seasonId} onChange={id=>{const item=competitions.find(x=>x.id===id);setForm(f=>({...f,competitionId:id,competition:item?.name||"",homeClubId:"",awayClubId:"",teamName:"",opponentName:""}));setAnalysisPerspective("")}} />
               <Choice label="Home team" value={form.homeClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,homeClubId:id,teamName:club?.name||""}));setAnalysisPerspective("")}} />
               <Choice label="Away team" value={form.awayClubId ?? ""} items={clubs.filter(club=>competitions.find(item=>item.id===form.competitionId)?.clubIds?.includes(club.id))} required disabled={!form.competitionId} onChange={id=>{const club=clubs.find(x=>x.id===id);setForm(f=>({...f,awayClubId:id,opponentName:club?.name||""}));setAnalysisPerspective("")}} />
+              <MatchColorField label="Home team match color" value={form.homeTeamColor ?? "#D91E36"} onChange={(homeTeamColor) => setForm((current) => ({ ...current, homeTeamColor }))}/>
+              <MatchColorField label="Away team match color" value={form.awayTeamColor ?? "#1D4ED8"} onChange={(awayTeamColor) => setForm((current) => ({ ...current, awayTeamColor }))}/>
               <Field name="matchDate" label="Date" value={form.matchDate ?? ""} onChange={setForm} type="date" required />
               <Field name="venue" label="Venue" value={form.venue ?? ""} onChange={setForm} />
             </div>
@@ -168,6 +174,10 @@ export function MatchForm({ mode, matchId }: MatchFormProps) {
       </Panel>
     </div>
   );
+}
+
+function MatchColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return <div className="grid gap-2"><FieldLabel>{label}</FieldLabel><label className="flex h-10 cursor-pointer items-center gap-3 rounded-md border border-white/10 bg-black/20 px-3"><input type="color" value={value} onChange={(event) => onChange(event.target.value.toUpperCase())} className="h-7 w-9 cursor-pointer rounded border-0 bg-transparent p-0"/><span className="font-mono text-xs uppercase text-slate-400">{value}</span></label></div>;
 }
 
 function Choice({label,value,items,onChange,required=false,disabled=false}:{label:string;value:string;items:MaintenanceRecord[];onChange:(value:string)=>void;required?:boolean;disabled?:boolean}) { return <label className="grid gap-2"><FieldLabel>{label}</FieldLabel><Select value={value} required={required} disabled={disabled} onChange={e=>onChange(e.target.value)}><option value="">Select…</option>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</Select>{!disabled&&items.length===0?<span className="text-xs text-amber-200/70">No associated options are available. Check the Maintenance area.</span>:null}</label> }
