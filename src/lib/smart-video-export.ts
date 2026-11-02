@@ -577,7 +577,7 @@ function drawBroadcastOverlay(context: CanvasRenderingContext2D, width: number, 
     const teamX = x + clockWidth + (index === 0 ? 0 : teamWidth + scoreWidth); const cardW = Math.max(2, Math.round(7 * scale)); const cardH = Math.max(4, Math.round(14 * scale)); const cardGap = Math.max(1, Math.round(3 * scale));
     for (let cardIndex = 0; cardIndex < redCards[index]; cardIndex += 1) { context.fillStyle = "#ef4444"; context.fillRect(teamX + Math.round(12 * scale) + cardIndex * (cardW + cardGap), y - cardH / 2, cardW, cardH); }
     context.fillStyle = colors[index]; context.fillRect(teamX, y, teamWidth, panelHeight);
-    const emblemSize = Math.round(22 * scale); const emblemX = teamX + Math.round(10 * scale); drawTeamEmblem(context, logos?.[index] || null, teams[index], emblemX, middleY - emblemSize / 2, emblemSize);
+    const emblemSize = Math.round(22 * scale); const emblemX = teamX + Math.round(10 * scale); drawTeamEmblem(context, logos?.[index] || null, teams[index], colors[index], emblemX, middleY - emblemSize / 2, emblemSize);
     const teamTextX = emblemX + emblemSize + Math.round(7 * scale); context.fillStyle = readableOverlayTextColor(colors[index]); context.font = `800 ${Math.round(18 * scale)}px system-ui, sans-serif`; context.textAlign = "left"; context.fillText(teams[index], teamTextX, middleY);
   }
   const scoreX = x + clockWidth + teamWidth; context.fillStyle = "#f2f4e8"; context.fillRect(scoreX, y, scoreWidth, panelHeight); context.fillStyle = "#17221b"; context.font = `900 ${Math.round(22 * scale)}px system-ui, sans-serif`; context.textAlign = "center"; context.fillText(`${score.homeScore}  -  ${score.awayScore}`, scoreX + scoreWidth / 2, middleY);
@@ -598,13 +598,13 @@ function loadScoreboardLogo(source: string | null) {
   });
 }
 
-function drawTeamEmblem(context: CanvasRenderingContext2D, image: HTMLImageElement | null, fallback: string, x: number, y: number, size: number) {
+function drawTeamEmblem(context: CanvasRenderingContext2D, image: HTMLImageElement | null, fallback: string, fallbackColor: string, x: number, y: number, size: number) {
   const radius = size / 2;
   context.save();
   context.beginPath(); context.arc(x + radius, y + radius, radius, 0, Math.PI * 2); context.clip();
-  context.fillStyle = "#ffffff"; context.fillRect(x, y, size, size);
+  context.fillStyle = image ? "#ffffff" : fallbackColor; context.fillRect(x, y, size, size);
   if (image) context.drawImage(image, x + 1, y + 1, size - 2, size - 2);
-  else { context.fillStyle = "#334155"; context.font = `900 ${Math.max(6, Math.round(size * .42))}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(fallback.slice(0, 1), x + radius, y + radius); }
+  else { context.fillStyle = readableOverlayTextColor(fallbackColor); context.font = `900 ${Math.max(5, Math.round(size * .35))}px system-ui, sans-serif`; context.textAlign = "center"; context.textBaseline = "middle"; context.fillText(fallback.slice(0, 2), x + radius, y + radius); }
   context.restore();
   context.strokeStyle = "rgba(0,0,0,.28)"; context.lineWidth = Math.max(1, Math.round(size / 14)); context.beginPath(); context.arc(x + radius, y + radius, radius, 0, Math.PI * 2); context.stroke();
 }
