@@ -74,6 +74,12 @@ type ActiveMoment = {
   id: string;
   momentTypeId: string;
   startTimeSeconds: number;
+  queuedSubMoments: ActiveSubMoment[];
+};
+
+type ActiveSubMoment = {
+  subMomentTypeId: string;
+  timeSeconds: number;
 };
 
 type Point = {
@@ -304,7 +310,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
   }, []);
 
   const createMoment = useCallback(
-    async (momentType: MomentTypeRecord, start: number, end: number) => {
+    async (momentType: MomentTypeRecord, start: number, end: number, queuedSubMoments: ActiveSubMoment[] = []) => {
       if (!match) {
         return null;
       }
@@ -320,8 +326,46 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       });
       upsertMomentInState(saved);
       setSelectedMomentId(saved.id);
-      setNotice(`${momentType.code} saved: ${formatPreciseTime(saved.startTimeSeconds)} - ${formatPreciseTime(saved.endTimeSeconds)}`);
-      return saved;
+
+      if (queuedSubMoments.length === 0) {
+        setNotice(`${momentType.code} saved: ${formatPreciseTime(saved.startTimeSeconds)} - ${formatPreciseTime(saved.endTimeSeconds)}`);
+        return saved;
+      }
+
+      const results = await Promise.allSettled(
+        queuedSubMoments.map((subMoment) =>
+          apiFetch<SubMomentRecord>(`/api/moments/${saved.id}/submoments`, {
+            method: "POST",
+            body: JSON.stringify({
+              subMomentTypeId: subMoment.subMomentTypeId,
+              timeSeconds: subMoment.timeSeconds,
+              fieldX: null,
+              fieldY: null,
+              goalX: null,
+              goalY: null,
+              notes: null,
+            }),
+          }),
+        ),
+      );
+      const savedSubMoments = results
+        .filter((result): result is PromiseFulfilledResult<SubMomentRecord> => result.status === "fulfilled")
+        .map((result) => result.value);
+      const completedMoment = {
+        ...saved,
+        subMoments: [...saved.subMoments, ...savedSubMoments].sort(
+          (a, b) => (a.timeSeconds ?? 0) - (b.timeSeconds ?? 0),
+        ),
+      };
+      upsertMomentInState(completedMoment);
+
+      const failedCount = results.length - savedSubMoments.length;
+      setNotice(
+        failedCount === 0
+          ? `${momentType.code} saved with ${savedSubMoments.length} submoment${savedSubMoments.length === 1 ? "" : "s"}.`
+          : `${momentType.code} saved. ${savedSubMoments.length} submoments saved and ${failedCount} could not be saved.`,
+      );
+      return completedMoment;
     },
     [match, upsertMomentInState],
   );
@@ -411,6 +455,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
             id: createTemporaryId(),
             momentTypeId: momentType.id,
             startTimeSeconds: currentVideoTime,
+            queuedSubMoments: [],
           },
         ]);
         setNotice(`${momentType.code} started at ${formatPreciseTime(currentVideoTime)}.`);
@@ -418,9 +463,35 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
       }
 
       setActiveMoments((current) => current.filter((moment) => moment.id !== active.id));
-      void createMoment(momentType, active.startTimeSeconds, currentVideoTime);
+      void createMoment(momentType, active.startTimeSeconds, currentVideoTime, active.queuedSubMoments);
     },
     [activeMoments, createMoment, player.currentTime, player.sourceUrl, player.videoRef],
+  );
+
+  const toggleActiveSubMoment = useCallback(
+    (activeMomentId: string, subMomentTypeId: string) => {
+      const currentVideoTime = roundSeconds(player.videoRef.current?.currentTime ?? player.currentTime);
+      setActiveMoments((current) =>
+        current.map((activeMoment) => {
+          if (activeMoment.id !== activeMomentId) {
+            return activeMoment;
+          }
+
+          const alreadySelected = activeMoment.queuedSubMoments.some(
+            (subMoment) => subMoment.subMomentTypeId === subMomentTypeId,
+          );
+          return {
+            ...activeMoment,
+            queuedSubMoments: alreadySelected
+              ? activeMoment.queuedSubMoments.filter(
+                  (subMoment) => subMoment.subMomentTypeId !== subMomentTypeId,
+                )
+              : [...activeMoment.queuedSubMoments, { subMomentTypeId, timeSeconds: currentVideoTime }],
+          };
+        }),
+      );
+    },
+    [player.currentTime, player.videoRef],
   );
 
   const cancelLastActiveMoment = useCallback(() => {
@@ -922,7 +993,16 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         </div>
       </Panel>
 
-      <div ref={workspaceRef} data-video-workspace className="grid min-h-0 flex-1 items-stretch gap-2 xl:grid-cols-[18rem_minmax(0,1fr)]">
+      <div
+        ref={workspaceRef}
+        data-video-workspace
+        className={cn(
+          "grid min-h-0 flex-1 items-stretch gap-2",
+          activeMoments.length > 0
+            ? "xl:grid-cols-[18rem_minmax(0,1fr)_19rem]"
+            : "xl:grid-cols-[18rem_minmax(0,1fr)]",
+        )}
+      >
         <div className="relative min-h-48 xl:min-h-0">
         <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
           <div className="border-b border-white/10 px-3 py-3">
@@ -1082,6 +1162,87 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
             </div>
           </Panel>
         </div>
+
+        {activeMoments.length > 0 ? (
+          <aside className="relative min-h-56 xl:min-h-0">
+            <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
+              <div className="shrink-0 border-b border-white/10 p-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Quick submoments</p>
+                <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                  Select while the moment is in progress. They are saved when the moment ends.
+                </p>
+              </div>
+              <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
+                {activeMoments.map((activeMoment) => {
+                  const momentType = momentTypes.find((type) => type.id === activeMoment.momentTypeId);
+                  if (!momentType) {
+                    return null;
+                  }
+                  const choices = getSubMomentTypesForMoment(subMomentTypes, momentType);
+                  return (
+                    <section key={activeMoment.id} className="overflow-hidden rounded-md border border-white/10 bg-white/[0.025]">
+                      <div className="border-b border-white/10 px-2.5 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate text-xs font-semibold" style={{ color: momentType.color }}>
+                            {momentType.name}
+                          </span>
+                          <span className="shrink-0 rounded border border-cyan-300/20 bg-cyan-300/[0.07] px-1.5 py-0.5 font-mono text-[9px] text-cyan-100">
+                            {activeMoment.queuedSubMoments.length} selected
+                          </span>
+                        </div>
+                        <p className="mt-1 font-mono text-[9px] text-slate-600">
+                          Started {formatPreciseTime(activeMoment.startTimeSeconds)}
+                        </p>
+                      </div>
+                      {choices.length === 0 ? (
+                        <p className="p-2.5 text-[10px] leading-4 text-slate-500">No submoments are configured for this moment.</p>
+                      ) : (
+                        <div className="grid gap-1.5 p-2">
+                          {choices.map((subMomentType) => {
+                            const selection = activeMoment.queuedSubMoments.find(
+                              (subMoment) => subMoment.subMomentTypeId === subMomentType.id,
+                            );
+                            return (
+                              <button
+                                key={subMomentType.id}
+                                type="button"
+                                aria-pressed={Boolean(selection)}
+                                title={selection ? "Click again to remove this submoment" : `Mark ${subMomentType.name} now`}
+                                className={cn(
+                                  "flex min-h-9 items-center gap-2 rounded-md border px-2.5 py-1.5 text-left text-[11px] transition",
+                                  selection
+                                    ? "border-cyan-300/60 bg-cyan-300/15 text-cyan-50 shadow-glow"
+                                    : "border-white/10 bg-black/10 text-slate-300 hover:border-white/20 hover:bg-white/[0.07]",
+                                )}
+                                onClick={() => toggleActiveSubMoment(activeMoment.id, subMomentType.id)}
+                              >
+                                <span
+                                  className={cn(
+                                    "h-2 w-2 shrink-0 rounded-full border",
+                                    selection ? "border-cyan-100 bg-cyan-300" : "border-white/25 bg-white/[0.04]",
+                                  )}
+                                />
+                                <span className="min-w-0 flex-1 truncate">{subMomentType.name}</span>
+                                {selection ? (
+                                  <span className="shrink-0 font-mono text-[9px] text-cyan-100/70">
+                                    {formatPreciseTime(selection.timeSeconds)}
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+              <p className="shrink-0 border-t border-white/10 px-3 py-2 text-[9px] leading-4 text-slate-500">
+                If none are selected, you can identify them later as before.
+              </p>
+            </Panel>
+          </aside>
+        ) : null}
 
         <aside className="hidden">
           <Panel className="overflow-hidden">
