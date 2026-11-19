@@ -29,6 +29,7 @@ import {
 import { GoalTarget, TacticalField, type SurfaceMarker } from "@/components/tactical-surfaces";
 import { CloudVideoLibrary } from "@/components/cloud-video-library";
 import { BroadcastScoreboard, type BroadcastState } from "@/components/broadcast-scoreboard";
+import { ScoreboardSettings } from "@/components/scoreboard-settings";
 import { MomentEditDialog } from "@/components/moment-edit-dialog";
 import { OutcomeButtons } from "@/components/outcome-buttons";
 import { SubmomentEditDialog } from "@/components/submoment-edit-dialog";
@@ -148,6 +149,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
   const [editingMoment, setEditingMoment] = useState<MomentRecord | null>(null);
   const [editingSubMoment, setEditingSubMoment] = useState<SubMomentRecord | null>(null);
   const [savingScore, setSavingScore] = useState(false);
+  const [showScoreboardSettings, setShowScoreboardSettings] = useState(false);
   const { soundEnabled, setSoundEnabled } = useSoundPreference();
 
   useEffect(() => {
@@ -826,6 +828,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         moment: displayMoment(selectedMoment, canonicalMomentTypes, perspective),
         quality: exportQuality,
         includeAudio: soundEnabled,
+        includeScoreboard: match.scoreboardEnabled,
         onStatus: setExportStatus,
       });
       downloadBlob(exported.blob, exported.fileName);
@@ -880,6 +883,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
           moment: visibleMoment,
           quality: exportQuality,
           includeAudio: soundEnabled,
+          includeScoreboard: match.scoreboardEnabled,
           onStatus: (status) => setExportStatus(`${index + 1} of ${moments.length}: ${status}`),
         });
         const indexedFileName = `${String(index + 1).padStart(3, "0")}-${exported.fileName}`;
@@ -934,6 +938,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
           moment: visibleMoment,
           quality: exportQuality,
           includeAudio: soundEnabled,
+          includeScoreboard: match.scoreboardEnabled,
           onStatus: (status) => setExportStatus(`${index + 1} of ${match.moments.length}: ${status}`),
         });
         const folder = visibleMoment.momentType.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "moments";
@@ -998,9 +1003,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
         data-video-workspace
         className={cn(
           "grid min-h-0 flex-1 items-stretch gap-2",
-          activeMoments.length > 0
-            ? "xl:grid-cols-[18rem_minmax(0,1fr)_19rem]"
-            : "xl:grid-cols-[18rem_minmax(0,1fr)]",
+          "xl:grid-cols-[18rem_minmax(0,1fr)_19rem]",
         )}
       >
         <div className="relative min-h-48 xl:min-h-0">
@@ -1156,15 +1159,14 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                   </div>
                   <form className="ml-1 flex items-center gap-1 border-l border-white/10 pl-2" onSubmit={(event) => { event.preventDefault(); goToExactTime(); }}><TextInput aria-label="Exact second" className="h-8 w-20 font-mono text-[10px]" type="number" min="0" max={player.duration || undefined} step="0.1" placeholder="Second" value={seekTime} onChange={(event) => setSeekTime(event.target.value)} disabled={!player.sourceUrl} /><Button type="submit" size="sm" className="h-8 px-2 text-[10px]" variant="secondary" disabled={!player.sourceUrl || seekTime === ""}>Go</Button></form>
                 </div></div>
-                <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1 font-mono text-xs text-white sm:inline-flex"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span><VideoFullscreenButton targetRef={workspaceRef}/><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8 whitespace-nowrap px-2 text-[10px]" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={13} /></Button></Link></div>
+                <div className="flex shrink-0 items-center gap-2"><span className="hidden items-center gap-1 font-mono text-xs text-white sm:inline-flex"><Clock size={13} className="text-cyan-200" />{formatPreciseTime(player.currentTime)} / {formatTime(player.duration)}</span><Button size="sm" className="h-8 whitespace-nowrap px-2 text-[10px]" onClick={() => setShowScoreboardSettings(true)}>Scoreboard</Button><VideoFullscreenButton targetRef={workspaceRef}/><Link href={`/analysis/${match.id}/submoments?${perspectiveQuery(perspective)}`}><Button size="sm" variant="primary" className="h-8 whitespace-nowrap px-2 text-[10px]" disabled={match.moments.length === 0 || activeMoments.length > 0}>Identify submoments <ChevronsRight size={13} /></Button></Link></div>
               </div>
               {player.error ? <p className="mt-1.5 rounded-md border border-red-400/30 bg-red-500/10 p-1.5 text-xs text-red-100">{player.error}</p> : null}
             </div>
           </Panel>
         </div>
 
-        {activeMoments.length > 0 ? (
-          <aside className="relative min-h-56 xl:min-h-0">
+        <aside className="relative min-h-56 xl:min-h-0">
             <Panel className="flex min-h-0 flex-col overflow-hidden xl:absolute xl:inset-0">
               <div className="shrink-0 border-b border-white/10 p-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Quick submoments</p>
@@ -1173,7 +1175,11 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
                 </p>
               </div>
               <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3">
-                {activeMoments.map((activeMoment) => {
+                {activeMoments.length === 0 ? (
+                  <div className="flex h-full min-h-40 items-center justify-center rounded-md border border-dashed border-white/10 bg-black/10 p-5 text-center text-xs leading-5 text-slate-500">
+                    Start a moment to select its submoments without changing the video layout.
+                  </div>
+                ) : activeMoments.map((activeMoment) => {
                   const momentType = momentTypes.find((type) => type.id === activeMoment.momentTypeId);
                   if (!momentType) {
                     return null;
@@ -1242,7 +1248,6 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
               </p>
             </Panel>
           </aside>
-        ) : null}
 
         <aside className="hidden">
           <Panel className="overflow-hidden">
@@ -1433,6 +1438,7 @@ export function AnalysisWorkspace({ matchId, perspective }: { matchId: string; p
 
       {editingMoment ? <MomentEditDialog moment={editingMoment} momentTypes={momentTypes} duration={player.duration || match.video?.durationSeconds || 0} onPreview={(start, end) => player.reviewSegment(start, end)} onSave={updateMoment} onClose={() => setEditingMoment(null)} /> : null}
       {editingSubMoment && selectedMoment ? <SubmomentEditDialog submoment={editingSubMoment} submomentTypes={selectedSubMomentTypes.some((type) => type.id === editingSubMoment.subMomentTypeId) ? selectedSubMomentTypes : [editingSubMoment.subMomentType, ...selectedSubMomentTypes]} momentStart={selectedMoment.startTimeSeconds} momentEnd={selectedMoment.endTimeSeconds} currentTime={player.currentTime} onSave={updateSubMoment} onClose={() => setEditingSubMoment(null)} /> : null}
+      {showScoreboardSettings ? <ScoreboardSettings match={match} onClose={() => setShowScoreboardSettings(false)} onSaved={(saved) => { setMatch((current) => current ? { ...current, ...saved } : current); setShowScoreboardSettings(false); }} /> : null}
 
       {cloudLibraryOpen ? <CloudVideoLibrary assets={cloudAssets} loading={cloudLoading} error={cloudError} attachingAssetId={attachingAssetId} onRetry={() => void loadCloudLibrary()} onClose={() => { if (!attachingAssetId) setCloudLibraryOpen(false); }} onSelect={(asset) => void selectCloudVideo(asset)} /> : null}
 

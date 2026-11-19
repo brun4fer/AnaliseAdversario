@@ -103,6 +103,13 @@ model Match {
   awayClubId   String?
   homeTeamColor String @default("#D91E36")
   awayTeamColor String @default("#1D4ED8")
+  scoreboardEnabled Boolean @default(false)
+  homeClubName String?
+  awayClubName String?
+  homeClubShortName String?
+  awayClubShortName String?
+  homeClubLogoDataUrl String?
+  awayClubLogoDataUrl String?
   competitionId String?
   firstHalfStartSeconds  Float?
   firstHalfEndSeconds    Float?

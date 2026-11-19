@@ -240,17 +240,18 @@ function mapMatch(match: MatchWithClubs): MatchRecord {
     awayClubId: match.awayClubId,
     homeTeamColor: match.homeTeamColor,
     awayTeamColor: match.awayTeamColor,
+    scoreboardEnabled: match.scoreboardEnabled,
     competitionId: match.competitionId,
     firstHalfStartSeconds: match.firstHalfStartSeconds,
     firstHalfEndSeconds: match.firstHalfEndSeconds,
     secondHalfStartSeconds: match.secondHalfStartSeconds,
     secondHalfEndSeconds: match.secondHalfEndSeconds,
-    homeClubName: match.homeClub?.name ?? null,
-    homeClubShortName: match.homeClub?.shortName ?? null,
-    homeClubLogoDataUrl: match.homeClub?.logoDataUrl ?? null,
-    awayClubName: match.awayClub?.name ?? null,
-    awayClubShortName: match.awayClub?.shortName ?? null,
-    awayClubLogoDataUrl: match.awayClub?.logoDataUrl ?? null,
+    homeClubName: match.homeClubName ?? match.homeClub?.name ?? null,
+    homeClubShortName: match.homeClubShortName ?? match.homeClub?.shortName ?? null,
+    homeClubLogoDataUrl: match.homeClubLogoDataUrl ?? match.homeClub?.logoDataUrl ?? null,
+    awayClubName: match.awayClubName ?? match.awayClub?.name ?? null,
+    awayClubShortName: match.awayClubShortName ?? match.awayClub?.shortName ?? null,
+    awayClubLogoDataUrl: match.awayClubLogoDataUrl ?? match.awayClub?.logoDataUrl ?? null,
     createdAt: match.createdAt.toISOString(),
     updatedAt: match.updatedAt.toISOString(),
   };
@@ -401,6 +402,20 @@ function normalizeMatchColor(value: string | undefined, fallback: string) {
   const normalized = value?.trim().toUpperCase() || fallback;
   if (!/^#[0-9A-F]{6}$/.test(normalized)) throw new Error("Invalid match team color.");
   return normalized;
+}
+
+function normalizeScoreboardName(value: string | null | undefined, limit: number) {
+  if (value === undefined) return undefined;
+  const normalized = value?.trim() || null;
+  if (normalized && normalized.length > limit) throw new Error(limit === 4 ? "Scoreboard short names can contain up to 4 characters." : "Scoreboard club names can contain up to 100 characters.");
+  return normalized;
+}
+
+function normalizeScoreboardBadge(value: string | null | undefined) {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (value.length > 400_000 || !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(value)) throw new Error("Use a PNG, JPEG or WebP badge smaller than 250 KB.");
+  return value;
 }
 
 function momentDuration(start: number, end: number) {
@@ -715,6 +730,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
         awayClubId: normalizeOptionalText(input.awayClubId),
         homeTeamColor: normalizeMatchColor(input.homeTeamColor, "#D91E36"),
         awayTeamColor: normalizeMatchColor(input.awayTeamColor, "#1D4ED8"),
+        scoreboardEnabled: input.scoreboardEnabled ?? false,
         competitionId: normalizeOptionalText(input.competitionId),
         analyses: {
           create: [
@@ -723,6 +739,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
           ],
         },
       },
+      include: { homeClub: true, awayClub: true },
     });
     return mapMatch(match);
   }
@@ -744,6 +761,7 @@ export async function createMatch(input: CreateMatchInput): Promise<MatchRecord>
     awayClubId: normalizeOptionalText(input.awayClubId),
     homeTeamColor: normalizeMatchColor(input.homeTeamColor, "#D91E36"),
     awayTeamColor: normalizeMatchColor(input.awayTeamColor, "#1D4ED8"),
+    scoreboardEnabled: input.scoreboardEnabled ?? false,
     competitionId: normalizeOptionalText(input.competitionId),
     firstHalfStartSeconds: input.firstHalfStartSeconds ?? null,
     firstHalfEndSeconds: input.firstHalfEndSeconds ?? null,
@@ -823,12 +841,20 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
         ...(input.awayClubId !== undefined ? { awayClubId: normalizeOptionalText(input.awayClubId) } : {}),
         ...(input.homeTeamColor !== undefined ? { homeTeamColor: normalizeMatchColor(input.homeTeamColor, currentMatch.homeTeamColor) } : {}),
         ...(input.awayTeamColor !== undefined ? { awayTeamColor: normalizeMatchColor(input.awayTeamColor, currentMatch.awayTeamColor) } : {}),
+        ...(input.scoreboardEnabled !== undefined ? { scoreboardEnabled: input.scoreboardEnabled } : {}),
+        ...(input.homeClubName !== undefined ? { homeClubName: normalizeScoreboardName(input.homeClubName, 100) } : {}),
+        ...(input.awayClubName !== undefined ? { awayClubName: normalizeScoreboardName(input.awayClubName, 100) } : {}),
+        ...(input.homeClubShortName !== undefined ? { homeClubShortName: normalizeScoreboardName(input.homeClubShortName, 4) } : {}),
+        ...(input.awayClubShortName !== undefined ? { awayClubShortName: normalizeScoreboardName(input.awayClubShortName, 4) } : {}),
+        ...(input.homeClubLogoDataUrl !== undefined ? { homeClubLogoDataUrl: normalizeScoreboardBadge(input.homeClubLogoDataUrl) } : {}),
+        ...(input.awayClubLogoDataUrl !== undefined ? { awayClubLogoDataUrl: normalizeScoreboardBadge(input.awayClubLogoDataUrl) } : {}),
         ...(input.competitionId !== undefined ? { competitionId: normalizeOptionalText(input.competitionId) } : {}),
         ...(input.firstHalfStartSeconds !== undefined ? { firstHalfStartSeconds: input.firstHalfStartSeconds } : {}),
         ...(input.firstHalfEndSeconds !== undefined ? { firstHalfEndSeconds: input.firstHalfEndSeconds } : {}),
         ...(input.secondHalfStartSeconds !== undefined ? { secondHalfStartSeconds: input.secondHalfStartSeconds } : {}),
         ...(input.secondHalfEndSeconds !== undefined ? { secondHalfEndSeconds: input.secondHalfEndSeconds } : {}),
       },
+      include: { homeClub: true, awayClub: true },
     });
     return mapMatch(match);
   }
@@ -866,6 +892,13 @@ export async function updateMatch(matchId: string, input: UpdateMatchInput): Pro
   if (input.awayClubId !== undefined) match.awayClubId = normalizeOptionalText(input.awayClubId);
   if (input.homeTeamColor !== undefined) match.homeTeamColor = normalizeMatchColor(input.homeTeamColor, match.homeTeamColor);
   if (input.awayTeamColor !== undefined) match.awayTeamColor = normalizeMatchColor(input.awayTeamColor, match.awayTeamColor);
+  if (input.scoreboardEnabled !== undefined) match.scoreboardEnabled = input.scoreboardEnabled;
+  if (input.homeClubName !== undefined) match.homeClubName = normalizeScoreboardName(input.homeClubName, 100) ?? null;
+  if (input.awayClubName !== undefined) match.awayClubName = normalizeScoreboardName(input.awayClubName, 100) ?? null;
+  if (input.homeClubShortName !== undefined) match.homeClubShortName = normalizeScoreboardName(input.homeClubShortName, 4) ?? null;
+  if (input.awayClubShortName !== undefined) match.awayClubShortName = normalizeScoreboardName(input.awayClubShortName, 4) ?? null;
+  if (input.homeClubLogoDataUrl !== undefined) match.homeClubLogoDataUrl = normalizeScoreboardBadge(input.homeClubLogoDataUrl) ?? null;
+  if (input.awayClubLogoDataUrl !== undefined) match.awayClubLogoDataUrl = normalizeScoreboardBadge(input.awayClubLogoDataUrl) ?? null;
   if (input.competitionId !== undefined) match.competitionId = normalizeOptionalText(input.competitionId);
   if (input.firstHalfStartSeconds !== undefined) match.firstHalfStartSeconds = input.firstHalfStartSeconds;
   if (input.firstHalfEndSeconds !== undefined) match.firstHalfEndSeconds = input.firstHalfEndSeconds;

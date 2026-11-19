@@ -47,6 +47,7 @@ export function BroadcastScoreboard({ match, currentTime, editable = false, savi
   onUndo?: () => void;
   onTeamColorChange?: (team: "home" | "away", color: string) => void;
 }) {
+  if (!match.scoreboardEnabled) return null;
   const score = scoreAtTime(match.scoreEvents || [], currentTime);
   const home = scoreboardTeamCode(match.homeClubShortName || match.homeClubName || match.teamName || "HOME");
   const away = scoreboardTeamCode(match.awayClubShortName || match.awayClubName || match.opponentName || "AWAY");

@@ -18,6 +18,7 @@ export type MatchRecord = {
   awayClubId: string | null;
   homeTeamColor: string;
   awayTeamColor: string;
+  scoreboardEnabled: boolean;
   competitionId: string | null;
   firstHalfStartSeconds: number | null;
   firstHalfEndSeconds: number | null;
@@ -160,6 +161,13 @@ export type CreateMatchInput = {
   awayClubId?: string | null;
   homeTeamColor?: string;
   awayTeamColor?: string;
+  scoreboardEnabled?: boolean;
+  homeClubName?: string | null;
+  awayClubName?: string | null;
+  homeClubShortName?: string | null;
+  awayClubShortName?: string | null;
+  homeClubLogoDataUrl?: string | null;
+  awayClubLogoDataUrl?: string | null;
   competitionId?: string | null;
   firstHalfStartSeconds?: number | null;
   firstHalfEndSeconds?: number | null;
