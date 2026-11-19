@@ -21,6 +21,7 @@ const navItems = [
   { href: "/maintenance", label: "Maintenance", icon: Wrench, area: "maintenance" as const },
   { href: "/settings", label: "Settings", icon: Settings, area: "settings" as const },
 ];
+const PORTAL_URL = "https://ap-football-portal.vercel.app";
 type Account = { accessControl: { globalUnlocked: boolean; unlockedAreas: AccessArea[] } };
 function unlocked(account: Account, area: AccessArea | null) { return !area || account.accessControl.globalUnlocked || account.accessControl.unlockedAreas.includes(area); }
 
@@ -59,6 +60,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
 
           <div className="flex items-center gap-2">
+            <a href={PORTAL_URL} className="inline-flex h-9 items-center gap-2 rounded-md px-2 text-xs text-cyan-100 transition hover:bg-cyan-300/10 hover:text-cyan-200" title="Voltar ao All-in-One Football Ecosystem">
+              <ArrowLeft size={16} /> <span className="hidden xl:inline">All-in-One</span>
+            </a>
             <PwaInstallButton />
             <LanguageSwitcher />
             <nav className="flex items-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] p-1">
